@@ -95,3 +95,7 @@ sticker_desc.json.bak-*
 gui/.token
 gui/active.json
 gui/wx_style.json
+
+# README 截图要进仓库（只放行 docs/images）
+!docs/images/
+!docs/images/*.png

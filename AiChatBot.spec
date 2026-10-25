@@ -31,6 +31,8 @@ datas = [
 
 # 需要的项目模块（.py 直接带上，bridge 会 import 它们）
 for mod in ("bridge.py", "wxbg.py", "sticker_vision.py", "rolling_summary.py",
+            "memory_store.py", "sticker_match.py", "wininput.py",
+            "diag_uia_tree.py", "check_embed.py", "calib_stickers.py",
             "sticker_match.py", "wininput.py"):
     p = os.path.join(ROOT, mod)
     if os.path.isfile(p):

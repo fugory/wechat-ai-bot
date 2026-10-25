@@ -25,6 +25,33 @@
     "path": "memory.md",
     "max_chars": 800
   },
+  "memory_v2": {
+    "enabled": true,
+    "db": "memory.db",
+    "triggers": {
+      "batch": 30,
+      "idle_min": 10,
+      "idle_msgs": 5
+    },
+    "budget_chars": 420,
+    "backfill_days": 3,
+    "_note": "画像层：每批新消息生成/更新一张记忆卡；私聊会带共同群的群卡",
+    "facts": {
+      "enabled": true,
+      "top_k": 5,
+      "max_chars": 320,
+      "_note": "事实层：从聊天里抽长期事实，回复前按关键词检索注入；带来源可删"
+    },
+    "v3": {
+      "enabled": false,
+      "model": "doubao-embedding-vision-251215",
+      "url": "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal",
+      "key_env": "ARK_EMBED_KEY",
+      "_note": "向量层：默认关；开启后检索用 0.6向量+0.3关键词+0.1新鲜度",
+      "format": "ark_multimodal",
+      "_format_note": "ark_multimodal=方舟；openai=通用 OpenAI 兼容（/v1/embeddings）"
+    }
+  },
   "context": {
     "enabled": true,
     "friend_max_turns": 8,
@@ -53,6 +80,7 @@
       "steal": "你正在看群里别人发的一张表情。判断它值不值得收进自己的表情库：\n- 收：有情绪张力、能复用来接话、和你的人设相符（欠揍、阴阳、敷衍、乐子人）\n- 不收：纯文字截图、广告、重复的、过于正式或与你气质不符的\n只回一个词：收 或 不收。不要解释。",
       "delete": "表情库满了，需要腾出位置。下面是现有表情（编号=含义，括号里是使用次数）。\n挑一个最该删的：优先删「用不上、含义重复、和新人设不符」的。\n只回一个编号数字，不要解释。"
     },
+    "hidden": [],
     "_hidden_note": "这些表情不在菜单里出现（面板装不下/发不出去），但微信收藏里仍然保留",
     "hard_cap": 40
   },

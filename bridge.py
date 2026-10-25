@@ -1462,7 +1462,8 @@ def mem_conn():
 
 
 def mem_enabled() -> bool:
-    return bool((load_config().get("memory_v2") or {}).get("enabled"))
+    # 老配置里没有这一节时默认开启（新装用户也是开的）
+    return bool((load_config().get("memory_v2") or {}).get("enabled", True))
 
 
 def mem_block(scope: str, owner: str, extra=None) -> str:
