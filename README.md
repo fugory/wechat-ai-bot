@@ -142,6 +142,7 @@ copy .env.example .env      # 填入模型 API Key
 ## 文档
 
 - [使用说明.txt](./使用说明.txt) —— 给非技术用户的上手指南
+- [docs/WORKFLOW.md](./docs/WORKFLOW.md) —— 改动前后的固定验证流程（改界面/截图/发版前必读）
 - [docs/DEV-NOTES.md](./docs/DEV-NOTES.md) —— 开发笔记（发送机制、历史决策）
 - [LESSONS.md](./LESSONS.md) —— 真实踩过的坑（改代码前建议先读）
 - [ROADMAP.md](./ROADMAP.md) —— 路线图与待办
