@@ -1,0 +1,23 @@
+# 运行依赖（Windows 10/11，Python 3.11）
+#
+# 说明：wechatauto-replica 是微信 4.x 的自动化库（SQLCipher 解密读库 + UIA 控件树），
+#      Apache-2.0，本项目只 import、不分发它的代码。
+wechatauto-replica>=1.2.7
+
+# 控制台（Flask + 本地 WebView 窗口）
+flask>=3.0
+pywebview>=5.0
+
+# 图像/表情匹配
+Pillow>=10.0
+numpy>=1.26
+
+# 进程与窗口
+psutil>=5.9
+pywin32>=306
+
+# 数据库解密
+cryptography>=42.0
+
+# UIA 只读探测（健康检查用；不传坐标点击）
+uiautomation>=2.0

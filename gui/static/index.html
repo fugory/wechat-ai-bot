@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>大肥鲸控制台</title>
+<style>
+  :root{--bg:#f5f6f8;--panel:#ffffff;--line:#e3e6ea;--fg:#1f2328;--dim:#6b7480;
+        --ok:#1a7f37;--warn:#9a6700;--bad:#cf222e;--accent:#2f6feb;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
+  header{display:flex;align-items:center;gap:12px;padding:10px 18px;
+         border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:9}
+  h1{font-size:15px;margin:0;font-weight:600}
+  .tabs{display:flex;gap:4px;margin-left:14px}
+  .tab{padding:5px 14px;border-radius:7px;cursor:pointer;color:var(--dim);font-size:13px}
+  .tab:hover{background:#2d3036;color:var(--fg)}
+  .tab.active{background:#2f3a4d;color:#cfe0ff}
+  .badge{padding:2px 9px;border-radius:20px;font-size:12px;border:1px solid var(--line)}
+  .b-ok{color:var(--ok);border-color:#cdeed4;background:#f2fbf4}
+  .b-off{color:var(--dim)}
+  .b-warn{color:var(--warn);border-color:#f2e2b0;background:#fff8e1}
+  .b-bad{color:var(--bad);border-color:#f5c2c0;background:#fff5f5}
+  .spacer{flex:1}
+  button{background:#eef0f3;color:var(--fg);border:1px solid var(--line);border-radius:7px;
+         padding:6px 13px;cursor:pointer;font-size:13px}
+  button:hover{background:#e3e7ec}
+  button.primary{background:#2f6feb;border-color:#2f6feb;color:#fff}
+  button.danger{background:#fff;border-color:#f0b6b6;color:#cf222e}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  main{padding:16px 18px;display:grid;gap:14px;grid-template-columns:320px minmax(0,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .card h2{font-size:13px;margin:0 0 10px;color:var(--dim);font-weight:600;letter-spacing:.5px}
+  .kv{display:grid;grid-template-columns:84px 1fr;gap:4px 8px;font-size:13px}
+  .kv .k{color:var(--dim)}
+  .kv .v{word-break:break-all}
+  .logbox{height:calc(100vh - 210px);overflow:auto;background:#fbfcfd;border:1px solid var(--line);
+          border-radius:8px;padding:10px 12px;font:12px/1.65 Consolas,"Cascadia Mono",monospace;
+          white-space:pre-wrap;word-break:break-all}
+  .ln{color:#24292f}.ln.err{color:#cf222e}.ln.ok{color:#1a7f37}.ln.dim{color:#8b949e}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:9px}
+  input[type=text],select,textarea{background:#fff;border:1px solid var(--line);border-radius:7px;
+        color:var(--fg);padding:7px 10px;font-size:13px;font-family:inherit}
+  input[type=text]{flex:1}
+  textarea{width:100%;min-height:76px;resize:vertical}
+  .hint{color:var(--dim);font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}
+  .view{display:none}.view.active{display:block}
+  .tb-wrap{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .panel-lite{background:#fbfcfd;border:1px solid var(--line);border-radius:8px;padding:11px 13px}
+  .mono{font:12px/1.7 Consolas,"Cascadia Mono",monospace;white-space:pre-wrap;word-break:break-all}
+  .reply{background:#f2fbf4;border:1px solid #cdeed4;border-radius:8px;padding:12px 14px;
+         font-size:14px;color:#14532d;white-space:pre-wrap}
+  .err{color:#ff8b82}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+
+  .stCard{background:#fbfcfd;border:1px solid var(--line);border-radius:10px;padding:9px;
+          display:flex;flex-direction:column;gap:7px}
+  .stCard img,.stCard .ph{width:100%;height:110px;object-fit:contain;background:#fff;
+          border-radius:7px;border:1px solid var(--line)}
+  .stCard .ph{display:flex;align-items:center;justify-content:center;color:#555;font-size:12px}
+  .stCard input[type=text]{width:100%;font-size:12px;padding:5px 7px}
+  .stCard .meta{display:flex;justify-content:space-between;color:var(--dim);font-size:11px}
+  .stCard button{font-size:12px;padding:4px 8px}
+  .stCard .love{display:flex;gap:3px;align-items:center}
+  .stCard .love i{width:11px;height:11px;border-radius:50%;background:#3a3f47;cursor:pointer}
+  .stCard .love i.on{background:#e0a03a}
+
+  /* ---- 外壳与侧栏 ---- */
+  .shell{display:flex;height:calc(100vh - 52px);overflow:hidden}
+  .side{width:140px;flex:0 0 140px;background:#fbfcfd;border-right:1px solid var(--line);
+        display:flex;flex-direction:column;padding:8px 6px;gap:2px;transition:width .15s}
+  .side.collapsed{width:44px;flex-basis:44px}
+  .side.collapsed .lbl{display:none}
+  .side .spacer{flex:1}
+  .nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;
+            cursor:pointer;color:var(--dim);font-size:13px;white-space:nowrap}
+  .nav-item:hover{background:#eef1f5;color:var(--fg)}
+  .nav-item.active{background:#e7f0ff;color:#1a4fc4}
+  .nav-item .ico{width:16px;text-align:center;font-size:14px}
+  .content{flex:1;overflow:auto;min-width:0}
+  .content main{grid-template-columns:300px minmax(0,1fr)}
+
+      .probRow{display:flex;align-items:center;gap:10px;width:100%;margin-top:6px;flex:1 1 100%}
+      .probRow .lab{font-size:12px;color:#5b636e;min-width:84px;white-space:nowrap}
+      .probVal{font-size:12px;color:#1a4fc4;min-width:44px;text-align:right;
+        font-variant-numeric:tabular-nums;font-weight:600}
+      .slider{-webkit-appearance:none;appearance:none;flex:1 1 auto;min-width:120px;height:18px;
+        border-radius:9px;outline:none;border:1px solid #d5dbe3;
+        background:linear-gradient(90deg,#2f6feb 0%,#6ee7ff calc(var(--p,0) * 1%),
+                   #e7ebf0 calc(var(--p,0) * 1%),#e7ebf0 100%);
+        box-shadow:inset 0 1px 3px rgba(0,0,0,.10);cursor:pointer}
+      .slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+        background:#fff;border:2px solid #2f6feb;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:grab}
+      .slider::-webkit-slider-thumb:active{cursor:grabbing;transform:scale(1.08)}
+
+      .wlGroupCard{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;background:#fbfcfd}
+      .wlLine{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+      .wlLine:last-child{margin-bottom:0}
+
+      .card{min-width:0}
+      .card textarea,.card input[type=text],.card select{max-width:100%;box-sizing:border-box}
+      .content,main{min-width:0}
+      .wlGroupCard{min-width:0}
+      .wlLine span.hint{overflow-wrap:anywhere}
+
+      /* 防御式布局：把一切压回视口内 */
+      *{box-sizing:border-box}
+      html,body{max-width:100%;overflow-x:hidden}
+      .content{flex:1 1 0;width:0;min-width:0;overflow-x:hidden}
+      .view{max-width:100%}
+      .view > div{box-sizing:border-box;max-width:100%}
+      .card,.panel-lite,.wlGroupCard{max-width:100%}
+      .row{flex-wrap:wrap}
+      input[type=text],select{max-width:100%}
+</style>
+</head>
+<body>
+<header>
+  <h1>大肥鲸控制台</h1>
+  <span id="badge" class="badge b-off"><span class="dot" style="background:#666"></span>未知</span>
+  <span id="sub" class="hint"></span>
+  <span class="spacer"></span>
+  <button id="btnStart" class="primary">启动</button>
+  <button id="btnRestart">重启</button>
+  <button id="btnStop" class="danger">停止</button>
+</header>
+
+<div class="shell">
+<nav class="side" id="side">
+  <div class="nav-item active" data-view="status"><span class="ico">◉</span><span class="lbl">状态</span></div>
+  <div class="nav-item" data-view="bench"><span class="ico">⌘</span><span class="lbl">测试台</span></div>
+  <div class="nav-item" data-view="stickers"><span class="ico">☺</span><span class="lbl">表情</span></div>
+  <div class="nav-item" data-view="models"><span class="ico">✦</span><span class="lbl">模型</span></div>
+  <div class="nav-item" data-view="persona"><span class="ico">⚙</span><span class="lbl">人格</span></div>
+  <div class="nav-item" data-view="memory"><span class="ico">◎</span><span class="lbl">记忆</span></div>
+  <div class="spacer"></div>
+  <div class="nav-item" id="btnSideToggle" title="折叠侧栏"><span class="ico">≡</span><span class="lbl">折叠</span></div>
+</nav>
+<div class="content">
+
+<!-- ========== 状态 ========== -->
+<div class="view active" id="view-status">
+  <main>
+    <section class="card">
+      <h2>状态</h2>
+      <div class="kv" id="kv"></div>
+      <h2 style="margin-top:14px">微信窗口</h2>
+      <div class="row" style="flex-wrap:wrap;gap:6px">
+        <button id="wxShow">显示</button>
+        <button id="wxHide">隐藏</button>
+        <button id="wxClose" class="danger">关闭微信</button>
+
+      </div>
+      <div id="wxMsg" class="hint"></div>
+
+      <h2 style="margin-top:16px">微信窗口尺寸</h2>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button id="wxSizeSync" class="primary">同步当前尺寸</button>
+        <button id="wxSizeDefault">尝试设为 1100×760</button>
+      </div>
+      <div id="wxSizeMsg" class="hint">拖动微信窗口到你想要的大小，然后点「同步当前尺寸」</div>
+
+      <h2 style="margin-top:16px">UIA 树诊断</h2>
+      <div class="row"><button id="btnDiagUia">诊断 UIA</button>
+        <span id="uiaDiagMsg" class="hint"></span></div>
+      <div class="hint" style="margin-bottom:12px">树崩了点这里：能分清重激活就能救还是必须重启微信。</div>
+      <h2 style="margin-top:16px">坐标系自检</h2>
+      <div class="row">
+        <button id="btnCalib" class="primary">开始自检</button>
+        <span class="hint">只读，不点击不发送</span>
+      </div>
+      <div id="calibOut" class="mono hint" style="margin-top:6px">未运行</div>
+    </section>
+    <section class="card">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:0 0 auto">实时日志</h2>
+        <input type="text" id="filter" placeholder="过滤关键字（群场景 / 失败 / 附件定位）">
+        <button id="btnClear">清屏</button>
+      </div>
+      <div class="logbox" id="log"></div>
+    </section>
+  </main>
+</div>
+
+
+
+<!-- ========== 表情库 ========== -->
+<div class="view" id="view-stickers">
+  <div style="padding:16px 18px">
+    <div class="row">
+      <h2 style="margin:0;color:var(--dim);font-size:13px">表情库</h2>
+      <input type="text" id="stFilter" placeholder="按标签过滤" style="max-width:220px">
+      <button id="btnSyncStk">同步表情</button>
+      <button id="btnCalibStk">校准表情</button>
+      <span id="stMsg" class="hint"></span>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>偷表情</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label class="hint" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="stealEnabled"> 开启自动收集（看到群友发的新表情会收进库）
+        </label>
+      </div>
+      <h2>偷表情 · 判断提示词</h2>
+      <div class="hint" style="margin-bottom:6px">模型看到别人发的新表情时，用这段提示词决定收不收。</div>
+      <textarea id="promptSteal" style="min-height:90px"></textarea>
+      <h2 style="margin-top:14px">删表情（需手动）</h2>
+      <div class="hint" style="line-height:1.7">
+        自动删除<b>做不到</b>：微信会过滤合成输入，我们点「删除」菜单项没有任何反应（
+        Invoke / 真实鼠标 / 键盘都试过）。<br>
+        怎么删：打开微信表情面板 → 收藏 → 滚到底 → <b>右键那张 → 删除</b>，
+        然后回这里点「从微信收藏同步」。<br>
+        面板一页只显示 25 格，收藏超过 25 个时，多出来的会排到第二页（发送时需要滚动，较慢）。
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnSavePrompts" class="primary">保存提示词</button>
+        <span id="promptMsg" class="hint"></span>
+      </div>
+    </div>
+    <div id="overflowBox" style="display:none;margin-bottom:12px"></div>
+    <style>
+      .needDel{position:relative;border-color:#e5484d !important;animation:pulseRed 1.2s ease-in-out infinite}
+      .needDel:hover{animation:none;border-color:#e5484d !important;box-shadow:0 0 0 2px rgba(229,72,77,.35)}
+      @keyframes pulseRed{
+        0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,.55);border-color:#e5484d}
+        50%    {box-shadow:0 0 0 5px rgba(229,72,77,0);border-color:#ff8b8f}
+      }
+      .needDel .badge{position:absolute;top:6px;left:6px;background:#e5484d;color:#fff;
+        font-size:11px;padding:2px 7px;border-radius:10px;letter-spacing:.5px}
+      .overflowWrap{border:1px dashed #e5484d;border-radius:10px;padding:10px 12px;background:#fff7f7}
+      .overflowWrap h3{margin:0 0 8px;font-size:14px;color:#b42318}
+      .overflowGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
+    </style>
+    <div class="hint" style="margin-bottom:12px;line-height:1.7">
+      表情来自<b>微信收藏</b>：这里不支持批量导入文件，只支持
+      <b>模型自动收集</b>（群里看到合适的新表情自动收）或<b>手动添加</b>
+      （在微信里右键表情 → 添加到表情，再点上面的「从微信收藏同步」）。
+      新接入的账号如果已有收藏，同步后会自动补描述。
+    </div>
+    <div id="stGrid" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
+      <div class="hint">加载中…</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ========== 模型 ========== -->
+<div class="view" id="view-models">
+  <div style="padding:16px 18px;display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))">
+    <section class="card">
+      <h2>聊天模型</h2>
+      <div class="row"><select id="mChatPreset" style="flex:1"></select></div>
+      <div class="row"><input type="text" id="mChatUrl" placeholder="接口地址"></div>
+      <div class="row">
+        <input type="text" id="mChatModel" placeholder="模型名">
+        <button id="mChatPull">拉取模型</button>
+      </div>
+      <div class="row" id="mChatWrap" style="display:none">
+        <select id="mChatList" style="flex:1"></select>
+      </div>
+      <div class="row"><input type="text" id="mChatKeyEnv" placeholder="密钥变量名，如 DEEPSEEK_API_KEY"></div>
+      <div class="row">
+        <input type="password" id="mChatKey" placeholder="粘贴密钥（只写不读）">
+        <button id="mChatSaveKey">保存密钥</button>
+      </div>
+      <div class="row">
+        <button id="mChatTest">测试连通性</button>
+        <span id="mChatStat" class="hint"></span>
+      </div>
+    </section>
+    <section class="card">
+      <h2>视觉模型</h2>
+      <div class="row"><label class="hint"><input type="checkbox" id="mVisionEnabled"> 启用独立视觉模型</label></div>
+      <div class="row"><select id="mVisionPreset" style="flex:1"></select></div>
+      <div class="row"><input type="text" id="mVisionUrl" placeholder="接口地址"></div>
+      <div class="row">
+        <input type="text" id="mVisionModel" placeholder="模型名">
+        <button id="mVisionPull">拉取模型</button>
+      </div>
+      <div class="row" id="mVisionWrap" style="display:none">
+        <select id="mVisionList" style="flex:1"></select>
+      </div>
+      <div class="row"><input type="text" id="mVisionKeyEnv" placeholder="密钥变量名，如 ARK_API_KEY"></div>
+      <div class="row">
+        <input type="password" id="mVisionKey" placeholder="粘贴密钥（只写不读）">
+        <button id="mVisionSaveKey">保存密钥</button>
+      </div>
+      <div class="row">
+        <button id="mVisionTest">测试连通性</button>
+        <span id="mVisionStat" class="hint"></span>
+      </div>
+      <div class="hint">关掉就用聊天模型兼职看图。两个通道的密钥<b>互相独立</b>。</div>
+    </section>
+
+
+
+    <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+      <button id="btnSaveModels" class="primary">保存模型配置</button>
+      <span id="modelMsg" class="hint"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 配置 ========== -->
+<div class="view" id="view-persona">
+  <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+
+
+
+
+    <section class="card" style="grid-column:1/-1">
+      <h2>人设 · 群聊</h2>
+      <textarea id="pGroup" style="min-height:130px"></textarea>
+    </section>
+
+    <section class="card" style="grid-column:1/-1">
+      <h2>人设 · 私聊</h2>
+      <textarea id="pFriend" style="min-height:100px"></textarea>
+    </section>
+
+    <section class="card" style="grid-column:1/-1">
+      <h2>白名单 · 好友</h2>
+      <div id="wlFriends" class="mono hint">—</div>
+      <h2 style="margin-top:14px">白名单 · 群</h2>
+      <div id="wlGroups" class="mono hint">—</div>
+      <div class="row" style="margin-top:14px">
+        <input type="text" id="wlQuery" placeholder="搜联系人 / 群名（留空显示最近会话）">
+        <button id="btnWlSearch">搜索</button>
+        <button id="btnWlSave" class="primary">保存白名单</button>
+      </div>
+      <div id="wlResults" class="mono hint" style="margin-top:8px">搜到的东西点一下就能加进来</div>
+    </section>
+
+    <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+      <button id="btnSaveCfg" class="primary">保存配置</button>
+      <span id="cfgMsg" class="hint"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 记忆 ========== -->
+<div class="view" id="view-memory">
+  <div style="padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+
+    <section class="card">
+      <h2>记忆概览</h2>
+      <div class="kv" id="memKv"></div>
+      <div class="row" style="margin-top:10px">
+        <label class="hint"><input type="checkbox" id="memEnabled"> 启用记忆</label>
+        <label class="hint"><input type="checkbox" id="memFactsOn"> 启用事实层</label>
+        <label class="hint"><input type="checkbox" id="memVecOn"> 启用向量检索</label>
+      </div>
+      <div class="hint">关掉「向量检索」就只用关键词，换说法搜不到；关掉「事实层」只保留画像卡。</div>
+    </section>
+
+    <section class="card">
+      <h2>向量检索接入（可选）</h2>
+      <div class="row">
+        <label class="hint">接口格式</label>
+        <select id="memFmt" style="flex:0 0 220px">
+          <option value="ark_multimodal">方舟 multimodal</option>
+          <option value="openai">OpenAI 兼容</option>
+        </select>
+      </div>
+      <div class="row"><input type="text" id="memUrl" placeholder="接口地址"></div>
+      <div class="row">
+        <input type="text" id="memModel" placeholder="模型名（先点拉取）">
+        <button id="memPull">拉取模型</button>
+      </div>
+      <div class="row" id="memWrap" style="display:none">
+        <select id="memList" style="flex:1"></select>
+      </div>
+      <div class="row"><input type="text" id="memKeyEnv" placeholder="密钥变量名，如 ARK_EMBED_KEY"></div>
+      <div class="row">
+        <input type="password" id="memKey" placeholder="粘贴密钥（只写不读）">
+        <button id="memSaveKey">保存密钥</button>
+      </div>
+      <div class="row">
+        <button id="memTest">测试 embedding</button>
+        <span id="memStat" class="hint"></span>
+      </div>
+      <div class="hint">不配也能用：检索自动退化成关键词匹配。</div>
+      <div class="row" style="margin-top:8px"><button id="memSave" class="primary">保存记忆配置</button>
+        <span id="memMsg" class="hint"></span></div>
+    </section>
+
+    <section class="card">
+      <h2>它记住了什么（可删）</h2>
+      <div id="memFacts" class="hint">加载中…</div>
+    </section>
+  </div>
+</div>
+
+<!-- ========== 测试台 ========== -->
+<div class="view" id="view-bench">
+  <main>
+    <section class="card">
+      <h2>模拟输入（不会发送）</h2>
+      <div class="row" style="flex-wrap:wrap">
+        <select id="kind" style="flex:1 1 130px;min-width:0">
+          <option value="group">群聊（小团体）</option>
+          <option value="friend">私聊（白名单第一个）</option>
+        </select>
+        <input type="text" id="asker" value="我自己" style="flex:0 0 110px;min-width:0" placeholder="谁在说话">
+      </div>
+      <textarea id="say" placeholder="例：中午十二点半左右我发的那张图片里是啥"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="btnRun" class="primary">生成（dry-run）</button>
+        <span class="hint">走的是线上同一条代码路径，只是不发送</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>它会看到什么</h2>
+      <div id="see" class="panel-lite mono hint">点「生成」后显示</div>
+      <h2 style="margin-top:14px">它会回什么</h2>
+      <div id="sayOut" class="reply hint">—</div>
+    </section>
+  </main>
+</div>
+
+</div><!-- /content -->
+</div><!-- /shell -->
+
+<script>
+const T = new URLSearchParams(location.search).get("t") || "";
+// 前端错误上报：页面"点了没反应"时能立刻知道是脚本炸了
+window.onerror = function (msg, src, line, col) {
+  try {
+    fetch("/api/client-log?t=" + T, {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({msg: String(msg), where: (src || "") + ":" + line + ":" + col})});
+  } catch (e) {}
+  return false;
+};
+const api = (p, opt) => fetch(p + (p.includes("?") ? "&" : "?") + "t=" + T, opt).then(r => r.json());
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+
+
+
+// ---- 尺寸 & 自检 ----
+async function loadSize(){
+  try{
+    const r = await api("/api/wechat/size");
+    if (!r.ok) return;
+    $("wxSizeMsg").textContent = "当前 " + (r.client||[]).join("×") +
+      " ｜ 下限 " + r.min.join("×") +
+      (r.keep_size ? " ｜ 保留你的尺寸（拖窗口后点同步）" : " ｜ 强制标准尺寸");
+  }catch(e){}
+}
+
+$("wxSizeSync").onclick = async () => {
+  const r = await api("/api/wechat/size/sync", {method:"POST"});
+  $("wxSizeMsg").textContent = r.ok ? (r.msg || "已记录") : (r.error || "失败");
+  if (r.ok) loadSize();
+};
+
+$("wxSizeDefault").onclick = async () => {
+  const r = await api("/api/wechat/size", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({w:1100, h:760})});
+  $("wxSizeMsg").textContent = r.ok ? (r.msg || "已应用") : (r.error || "微信拒绝了这个尺寸");
+  if (r.ok) loadSize();
+};
+
+$("btnCalib").onclick = async () => {
+  $("btnCalib").disabled = true;
+  $("calibOut").textContent = "自检中…（会开一次表情面板）";
+  try{
+    const r = await api("/api/wechat/calibrate");
+    if (!r.ok){ $("calibOut").textContent = r.error || "自检失败"; return; }
+    const head = `客户区 ${r.client.join("×")} | 缩放 ${r.scale.join(" / ")} | ${r.passed}/${r.total} 通过`;
+    const rows = (r.checks||[]).map(c =>
+      `<div>${c.ok?"✅":"❌"} ${esc(c.name)} ${c.coords ? "["+c.coords.join(", ")+"]" : ""} <span class="hint">${esc(c.note||"")}</span></div>`);
+    $("calibOut").innerHTML = `<div style="margin-bottom:4px">${head}</div>` + rows.join("");
+  }catch(e){ $("calibOut").textContent = "请求失败：" + e; }
+  finally{ $("btnCalib").disabled = false; }
+};
+
+// ---- 微信窗口控制 ----
+let wxFollowOn = true, wxCaptionStripped = false;
+
+async function loadWinState(){
+  try{
+    const r = await api("/api/wechat/win");
+    if (!r.ok) return;
+    wxFollowOn = !!r.follow;
+    $("wxMsg").textContent = r.wechat
+      ? ("微信在 " + (r.wechat_rect ? r.wechat_rect.slice(0,2).join(",") : "?") +
+         " | 控制台在 " + (r.gui_rect ? r.gui_rect.slice(0,2).join(",") : "?"))
+      : "微信窗口没找到";
+  }catch(e){}
+}
+
+async function wxAct(action){
+  const r = await api("/api/wechat/" + action, {method:"POST"});
+  if (!r.ok) $("wxMsg").textContent = r.error || "操作失败";
+  setTimeout(loadWinState, 600);
+}
+
+$("wxShow").onclick = () => wxAct("show");
+$("wxHide").onclick = () => wxAct("hide");
+$("wxClose").onclick = () => { if (confirm("确定关闭微信？关闭后 bot 无法发送。")) wxAct("close"); };
+
+
+
+
+async function pullModels(which, prefix){
+  const wrap = $(prefix + "Wrap"), sel = $(prefix + "List");
+  const r = await api("/api/models/list", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({which})});
+  if (!r.ok) { $(prefix + "Stat").textContent = "❌ " + (r.error || "拉取失败"); wrap.style.display = "none"; return; }
+  if (!r.models || !r.models.length) { $(prefix + "Stat").textContent = "服务没返回模型列表"; wrap.style.display = "none"; return; }
+  sel.innerHTML = r.models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+  sel.value = $(prefix + "Model").value || r.models[0];
+  wrap.style.display = "flex";
+  $(prefix + "Stat").textContent = "✅ " + r.msg + "，请在下拉里选";
+}
+
+function bindPull(btnId, which, prefix){
+  const el = $(btnId);
+  if (!el) return;
+  el.onclick = () => pullModels(which, prefix);
+  const sel = $(prefix + "List");
+  if (sel) sel.onchange = () => { $(prefix + "Model").value = sel.value; $(prefix + "Stat").textContent = "已选择 " + sel.value + "（记得保存）"; };
+}
+bindPull("mChatPull", "chat", "mChat");
+bindPull("mVisionPull", "vision", "mVision");
+
+// ---- 模型 ----
+let MODEL_PRESETS = [];
+
+function fillPresets(sel, withEmpty) {
+  const opts = [];
+  if (withEmpty) opts.push('<option value="">自定义（自己填）</option>');
+  MODEL_PRESETS.forEach(p => opts.push(`<option value="${p.id}">${esc(p.label)}</option>`));
+  sel.innerHTML = opts.join("");
+}
+
+function presetById(id) {
+  return MODEL_PRESETS.find(p => p.id === id) || null;
+}
+
+async function loadModels(){
+  try{
+    const r = await api("/api/models");
+    if (!r.ok) { $("modelMsg").textContent = r.error || "读取失败"; return; }
+    MODEL_PRESETS = r.presets || [];
+    fillPresets($("mChatPreset"), true);
+    fillPresets($("mVisionPreset"), true);
+
+    $("mChatUrl").value = r.chat.url || "";
+    $("mChatModel").value = r.chat.model || "";
+    $("mChatKeyEnv").value = r.chat.key_env || "";
+    $("mChatStat").textContent = r.chat.has_key ? "✅ 已配置密钥" : "⬜ 未配置密钥";
+
+    $("mVisionEnabled").checked = !!r.vision.enabled;
+    $("mVisionUrl").value = r.vision.url || "";
+    $("mVisionModel").value = r.vision.model || "";
+    $("mVisionKeyEnv").value = r.vision.key_env || "";
+    $("mVisionStat").textContent = r.vision.has_key ? "✅ 已配置密钥" : "⬜ 未配置密钥";
+  }catch(e){ $("modelMsg").textContent = "请求失败：" + e; }
+}
+
+$("mChatPreset").onchange = () => {
+  const p = presetById($("mChatPreset").value);
+  if (!p) return;
+  if (p.url) $("mChatUrl").value = p.url;
+  if (p.model) $("mChatModel").value = p.model;
+  if (p.key_env) $("mChatKeyEnv").value = p.key_env;
+};
+$("mVisionPreset").onchange = () => {
+  const p = presetById($("mVisionPreset").value);
+  if (!p) return;
+  if (p.url) $("mVisionUrl").value = p.url;
+  if (p.model) $("mVisionModel").value = p.model;
+  if (p.key_env) $("mVisionKeyEnv").value = p.key_env;
+};
+
+async function saveKey(envField, valField, statEl){
+  const name = $(envField).value.trim(), val = $(valField).value.trim();
+  if (!name || !val) { $(statEl).textContent = "变量名和密钥都要填"; return; }
+  const r = await api("/api/secrets", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({name, value: val})});
+  $(statEl).textContent = r.ok ? "✅ 密钥已保存" : (r.error || "失败");
+  if (r.ok) $(valField).value = "";
+}
+$("mChatSaveKey").onclick = () => saveKey("mChatKeyEnv", "mChatKey", "mChatStat");
+$("mVisionSaveKey").onclick = () => saveKey("mVisionKeyEnv", "mVisionKey", "mVisionStat");
+
+async function testModel(which, statEl){
+  $(statEl).textContent = "测试中…";
+  const r = await api("/api/models/test", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({which})});
+  $(statEl).textContent = r.ok ? ("✅ " + r.msg) : ("❌ " + (r.error || "失败"));
+}
+$("mChatTest").onclick = () => testModel("chat", "mChatStat");
+$("mVisionTest").onclick = () => testModel("vision", "mVisionStat");
+
+$("btnSaveModels").onclick = async () => {
+  $("btnSaveModels").disabled = true;
+  try{
+    const r = await api("/api/models", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        chat:{url:$("mChatUrl").value, model:$("mChatModel").value, key_env:$("mChatKeyEnv").value},
+        vision:{enabled:$("mVisionEnabled").checked, url:$("mVisionUrl").value,
+                model:$("mVisionModel").value, key_env:$("mVisionKeyEnv").value},
+      })});
+    $("modelMsg").textContent = r.ok ? (r.msg || "已保存") : (r.error || "失败");
+    if (r.ok) loadModels();
+  }catch(e){ $("modelMsg").textContent = "请求失败：" + e; }
+  finally{ $("btnSaveModels").disabled = false; }
+};
+
+// ---- 活跃标记（节流 5 秒）----
+let lastTouch = 0;
+function touch(){
+  const now = Date.now();
+  if (now - lastTouch < 5000) return;
+  lastTouch = now;
+  api("/api/touch", {method:"POST"}).catch(()=>{});
+}
+
+// ---- tabs ----
+document.querySelectorAll(".nav-item[data-view]").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".nav-item[data-view]").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  $("view-" + t.dataset.view).classList.add("active");
+  touch();
+});
+
+// 切到表情页时懒加载
+document.querySelector('.nav-item[data-view="stickers"]').addEventListener("click", () => {
+  loadStickers(); loadPrompts(); loadOverflow();
+});
+document.querySelector('.nav-item[data-view="models"]').addEventListener("click", () => {
+  loadModels();
+});
+document.querySelector('.nav-item[data-view="memory"]').addEventListener("click", () => {
+  loadMemory();
+});
+
+// 深链：?view=bench 直接打开测试台（必须在事件绑定之后）
+(function(){
+  const v = new URLSearchParams(location.search).get("view");
+  if (!v) return;
+  const t = document.querySelector('.nav-item[data-view="' + v + '"]');
+  if (t) t.click();
+  if (v === "stickers") { loadStickers(); loadPrompts(); }   // 不依赖 click 监听顺序
+  if (v === "models") loadModels();
+  if (v === "config") loadConfig();
+})();
+
+// ---- 状态 ----
+function cls(line){
+  if (/失败|错误|异常|Traceback|HTTP 5|HTTP 4/.test(line)) return "err";
+  if (/成功|偷到|已发送/.test(line)) return "ok";
+  if (/^\[wxbg\]|wechatauto/.test(line)) return "dim";
+  return "";
+}
+const fmtUptime = s => { if(!s) return "—"; const h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+  return (h?h+"h":"")+m+"m"; };
+
+async function refresh(){
+  try{
+    const d = await api("/api/status"), b = d.bot, w = d.wechat;
+    const badge = $("badge");
+    if (!b.running){ badge.className="badge b-off"; badge.innerHTML='<span class="dot" style="background:#666"></span>已停止'; }
+    else if (b.count > 1){ badge.className="badge b-bad"; badge.innerHTML='<span class="dot" style="background:#f85149"></span>起了 '+b.count+' 个！'; }
+    else if (b.stale){ badge.className="badge b-warn"; badge.innerHTML='<span class="dot" style="background:#d29922"></span>疑似卡住'; }
+    else { badge.className="badge b-ok"; badge.innerHTML='<span class="dot" style="background:#3fb950"></span>运行中'; }
+    $("sub").textContent = b.running ? ("PID "+b.pid+" · "+fmtUptime(b.uptime_s)) : "";
+    const wxTxt = !w.running ? "未运行" : (w.iconic ? "已最小化" : (w.visible ? "正常" : "窗口不可见"));
+    const wxCls = !w.running ? "b-bad" : (w.visible && !w.iconic ? "b-ok" : "b-warn");
+    $("kv").innerHTML = [
+      ["机器人", b.running ? "运行中（"+b.count+" 个进程）" : "已停止"],
+      ["日志更新", b.log_age_s==null ? "—" : (b.log_age_s+" 秒前"+(b.stale?"（可能卡住）":""))],
+      ["微信", '<span class="badge '+wxCls+'">'+wxTxt+'</span>'],
+      ["窗口尺寸", w.rect ? (w.rect[2]+" × "+w.rect[3]) : "—"],
+      ["UIA 树", d.uia && d.uia.ok === true ? "✅ 正常" : (d.uia && d.uia.ok === false ? "<span style='color:#f85149'>❌ 异常（建议重启微信）</span>" : "—")],
+      ["收藏表情", d.stickers==null ? "读不到（微信未登录？）" : d.stickers+" 个"],
+      ["服务器时间", d.server_time],
+    ].map(([k,v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join("");
+    $("btnStart").disabled = b.running;
+    $("btnStop").disabled = !b.running;
+  }catch(e){
+    $("badge").className="badge b-bad";
+    $("badge").innerHTML='<span class="dot" style="background:#f85149"></span>连不上后端';
+  }
+}
+
+let lines = [];
+async function refreshLogs(){
+  try{ const d = await api("/api/logs?n=300"); lines = d.lines || []; renderLogs(); }catch(e){}
+}
+function renderLogs(){
+  const q = $("filter").value.trim(), box = $("log");
+  const shown = q ? lines.filter(l => l.includes(q)) : lines;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  box.innerHTML = shown.map(l => `<div class="ln ${cls(l)}">${esc(l)}</div>`).join("");
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+$("filter").addEventListener("input", renderLogs);
+document.addEventListener("input", e => {
+  if (e.target && ["say","pGroup","pFriend","cUrl","cModel"].includes(e.target.id)) touch();
+}, true);
+$("btnClear").onclick = () => { lines = []; renderLogs(); };
+
+async function act(kind){
+  const r = await api("/api/bot/" + kind, {method:"POST"});
+  if (!r.ok) alert(r.msg || "操作失败");
+  setTimeout(refresh, 1200); setTimeout(refreshLogs, 1500);
+}
+$("btnStart").onclick = () => act("start");
+$("btnStop").onclick = () => act("stop");
+$("btnRestart").onclick = async () => { await act("stop"); setTimeout(()=>act("start"), 2500); };
+
+// ---- 测试台 ----
+$("btnRun").onclick = async () => {
+  const text = $("say").value.trim();
+  if (!text) return;
+  $("btnRun").disabled = true; $("btnRun").textContent = "生成中…";
+  $("sayOut").className = "reply hint"; $("sayOut").textContent = "…";
+  $("see").className = "panel-lite mono hint"; $("see").textContent = "…";
+  try{
+    const r = await api("/api/test", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({text, kind: $("kind").value, asker: $("asker").value})});
+    if (!r.ok){
+      $("sayOut").className = "reply err"; $("sayOut").textContent = r.error || "失败";
+      return;
+    }
+    const d = r.detail || {};
+    const rows = [
+      ["会话", d.chat],
+      ["场景", (d.scene_chars||0)+" 字 / "+(d.scene_lines||0)+" 行"],
+      ["滚动摘要", d.summary ? "有" : "无"],
+      ["时间归一化", d.time_note || "—"],
+      ["发送者约束", d.sender_constraint || "无"],
+      ["附件定位", d.attach_hint || "未命中"],
+      ["附件索引", (d.attach_index_lines||0)+" 行"],
+      ["记忆", (d.memory_chars||0)+" 字"],
+      ["表情菜单", (d.menu_chars||0)+" 字"],
+      ["提示词", (d.prompt_chars||0)+" 字 ≈ "+(d.est_tokens||0)+" tokens"],
+      ["耗时", (d.reply_seconds||0)+" 秒"],
+    ];
+    $("see").className = "panel-lite mono";
+    $("see").innerHTML = rows.map(([k,v]) => `<div><span class="hint">${k}：</span>${esc(v)}</div>`).join("")
+      + (d.scene_head ? `<div style="margin-top:8px" class="hint">场景开头：</div><div>${esc(d.scene_head)}</div>` : "");
+    $("sayOut").className = "reply";
+    $("sayOut").textContent = r.reply || "(空)";
+  }catch(e){
+    $("sayOut").className = "reply err"; $("sayOut").textContent = "请求失败：" + e;
+  }finally{
+    $("btnRun").disabled = false; $("btnRun").textContent = "生成（dry-run）";
+  }
+};
+
+
+
+
+
+
+async function loadSteal(){
+  try{
+    const r = await api("/api/steal");
+    if (!r.ok) return;
+    $("stealEnabled").checked = !!r.enabled;
+  }catch(e){}
+}
+
+$("stealEnabled").onchange = async () => {
+  const r = await api("/api/steal", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({enabled: $("stealEnabled").checked})});
+  $("promptMsg").textContent = r.ok ? ("偷表情已" + (r.enabled ? "开启" : "关闭")) : (r.error || "失败");
+};
+
+
+async function loadOverflow(){
+  try{
+    const r = await api("/api/stickers/overflow");
+    const box = $("overflowBox");
+    if (!r.ok || !r.count) { box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "block";
+    const cards = (r.items || []).map(x => `
+      <div class="stCard needDel" data-md5="${x.md5}">
+        <span class="badge">待删除</span>
+        ${x.md5 ? `<img src="/api/stickers/thumb/${x.md5}?t=${T}" loading="lazy">` : `<div class="ph">无图</div>`}
+        <div class="meta"><span>${esc(x.tag || x.md5.slice(0,8))}</span></div>
+        <div class="hint" style="font-size:11px">在微信里右键它 → 删除</div>
+      </div>`).join("");
+    box.innerHTML = `<div class="overflowWrap">
+        <h3>有 ${r.count} 个表情放不进面板，需要删除</h3>
+        <div class="hint" style="margin-bottom:8px">删掉下面这些（红色闪烁的），再点上面「同步表情」。</div>
+        <div class="overflowGrid">${cards}</div>
+      </div>`;
+  }catch(e){}
+}
+
+// ---- 表情提示词 ----
+async function loadPrompts(){
+  try{
+    const r = await api("/api/emoji-prompts");
+    if (!r.ok) return;
+    $("promptSteal").value = r.steal || "";
+  }catch(e){}
+  loadSteal();
+}
+
+$("btnSavePrompts").onclick = async () => {
+  $("btnSavePrompts").disabled = true;
+  try{
+    const r = await api("/api/emoji-prompts", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({steal: $("promptSteal").value})});
+    $("promptMsg").textContent = r.ok ? (r.msg || "已保存") : (r.error || "失败");
+  }catch(e){ $("promptMsg").textContent = "请求失败：" + e; }
+  finally{ $("btnSavePrompts").disabled = false; }
+};
+
+// ---- 表情库 ----
+let stItems = [];
+
+async function loadStickers(){
+  $("stGrid").innerHTML = '<div class="hint">加载中…</div>';
+  try{
+    const r = await api("/api/stickers");
+    if (!r.ok){ $("stGrid").innerHTML = '<div class="err">' + esc(r.error||"读取失败") + '</div>'; return; }
+    stItems = r.items || [];
+    renderStickers();
+  }catch(e){ $("stGrid").innerHTML = '<div class="err">请求失败：' + esc(e) + '</div>'; }
+}
+
+function renderStickers(){
+  const q = $("stFilter").value.trim();
+  const list = q ? stItems.filter(s => (s.tag||"").includes(q)) : stItems;
+  if (!list.length){ $("stGrid").innerHTML = '<div class="hint">没有匹配的表情</div>'; return; }
+  $("stGrid").innerHTML = list.map(s => {
+    const img = s.has_thumb
+      ? `<img src="/api/stickers/thumb/${s.md5}?t=${T}" loading="lazy">`
+      : `<div class="ph">无图</div>`;
+    const hearts = [1,2,3,4,5].map(n =>
+      `<i class="${n<=s.love?'on':''}" data-md5="${s.md5}" data-love="${n}"></i>`).join("");
+    return `<div class="stCard" data-md5="${s.md5}">
+      ${img}
+      <input type="text" class="stTag" value="${esc(s.tag||'')}" placeholder="标签">
+      <div class="meta"><span>#${s.index}</span><span>用了 ${s.uses} 次</span></div>
+      <div class="love">${hearts}</div>
+      <div style="display:flex;gap:6px">
+        <button class="stSave">保存</button>
+        <button class="stRe">重跑描述</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  $("stGrid").querySelectorAll(".stSave").forEach(btn => btn.onclick = async () => {
+    const card = btn.closest(".stCard");
+    const md5 = card.dataset.md5;
+    const tag = card.querySelector(".stTag").value.trim();
+    const love = card.querySelector(".love").dataset.love || 0;
+    const r = await api("/api/stickers/update", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({md5, tag, love: +love || undefined})});
+    $("stMsg").textContent = r.ok ? "已保存" : (r.error || "失败");
+    if (r.ok) loadStickers();
+  });
+
+  $("stGrid").querySelectorAll(".stRe").forEach(btn => btn.onclick = async () => {
+    const card = btn.closest(".stCard");
+    btn.disabled = true; btn.textContent = "识别中…";
+    const r = await api("/api/stickers/redesc", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({md5: card.dataset.md5})});
+    $("stMsg").textContent = r.ok ? ("新描述：" + r.tag) : (r.error || "失败");
+    btn.disabled = false; btn.textContent = "重跑描述";
+    if (r.ok) loadStickers();
+  });
+
+  $("stGrid").querySelectorAll(".love i").forEach(dot => dot.onclick = () => {
+    const card = dot.closest(".stCard");
+    const n = +dot.dataset.love;
+    card.querySelector(".love").dataset.love = n;
+    card.querySelectorAll(".love i").forEach(x =>
+      x.classList.toggle("on", +x.dataset.love <= n));
+  });
+}
+
+$("stFilter").addEventListener("input", renderStickers);
+
+
+
+if ($("btnDiagUia")) $("btnDiagUia").onclick = async () => {
+  const el = $("uiaDiagMsg");
+  el.textContent = "诊断中…（约 5 秒）";
+  try{
+    const r = await api("/api/uia/diagnose", {method:"POST"});
+    if (!r.ok) { el.textContent = "❌ " + (r.error || "诊断失败"); return; }
+    const map = {HEALTHY:"✅ 正常", RECOVERABLE:"🟡 可自动恢复（不用重启微信）",
+                 PROVIDER_DEAD:"❌ 需要重启微信", WECHAT_GONE:"⚪ 微信没开"};
+    el.textContent = (map[r.verdict] || r.verdict) + " · " + (r.advice || "");
+  }catch(e){ el.textContent = "请求失败：" + e; }
+};
+
+$("btnCalibStk").onclick = async () => {
+  $("btnCalibStk").disabled = true;
+  $("stMsg").textContent = "校准中…（要开一次表情面板，约 10 秒）";
+  try{
+    const r = await api("/api/stickers/calibrate", {method:"POST"});
+    if (!r.ok) { $("stMsg").textContent = r.error || "校准失败"; return; }
+    const bad = (r.unmatched || []).map(x => x.tag || x.md5.slice(0,8)).join("、");
+    $("stMsg").textContent = r.msg + (bad ? "：" + bad : "");
+    loadStickers(); loadOverflow();
+  }catch(e){ $("stMsg").textContent = "请求失败：" + e; }
+  finally{ $("btnCalibStk").disabled = false; }
+};
+
+$("btnSyncStk").onclick = async () => {
+  $("stMsg").textContent = "同步中…";
+  const r = await api("/api/stickers/sync", {method:"POST"});
+  $("stMsg").textContent = r.ok ? (r.msg || "已同步") : (r.error || "失败");
+  if (r.ok) loadStickers();
+};
+
+
+
+
+// ---- 白名单 ----
+let wlFriends = [], wlGroups = [];
+
+function probText(v){
+  v = Number(v || 0);
+  if (!v) return "关闭";
+  return v + "%";
+}
+
+function renderWl(){
+  $("wlFriends").innerHTML = wlFriends.length
+    ? wlFriends.map((f,i) => `<div style="display:flex;gap:8px;align-items:center;margin:3px 0">
+        <span>${esc(f.name)}</span><span class="hint">${esc(f.wxid)}</span>
+        <button data-kind="friend" data-i="${i}" class="wlDel">移除</button></div>`).join("")
+    : '<span class="hint">（没有好友，它不会回任何私聊）</span>';
+  $("wlGroups").innerHTML = wlGroups.length
+    ? wlGroups.map((g,i) => `<div class="wlGroupCard">
+        <div class="wlLine">
+          <b>${esc(g.name)}</b>
+          <span class="hint" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(g.wxid||"")}</span>
+          <label class="hint"><input type="checkbox" class="gAt" data-i="${i}" ${g.require_at?"checked":""}> 必须@</label>
+          <button data-kind="group" data-i="${i}" class="wlDel">移除</button>
+        </div>
+        <div class="wlLine">
+          <input type="text" class="gTrig" data-i="${i}" value="${esc((g.triggers||[]).join(","))}"
+                 placeholder="触发词，逗号分隔" style="flex:1;min-width:120px">
+          <label class="hint">冷却</label>
+          <input type="text" class="gCd" data-i="${i}" value="${esc(g.min_interval_s)}"
+                 placeholder="秒" style="width:70px;flex:0 0 70px">
+          <span class="hint">秒</span>
+        </div>
+        <div class="probRow">
+          <span class="lab">未@插话概率</span>
+          <input type="range" class="slider gProb" data-i="${i}" min="0" max="100" step="1"
+                 value="${Number(g.chime_prob ?? 0)}" style="--p:${Number(g.chime_prob ?? 0)}">
+          <span class="probVal gProbVal" data-i="${i}">${probText(g.chime_prob)}</span>
+        </div>
+        <div class="hint" style="font-size:11px;margin-top:2px">
+          被@或命中触发词时一定回；勾了「必须@」则未@一律不回。
+        </div>
+      </div>`).join("")
+    : '<span class="hint">（没有群）</span>';
+
+  document.querySelectorAll(".wlDel").forEach(btn => btn.onclick = () => {
+    const i = +btn.dataset.i;
+    if (btn.dataset.kind === "friend") wlFriends.splice(i,1); else wlGroups.splice(i,1);
+    renderWl();
+  });
+  document.querySelectorAll(".gAt").forEach(cb => cb.onchange = () => {
+    wlGroups[+cb.dataset.i].require_at = cb.checked;
+  });
+  document.querySelectorAll(".gTrig").forEach(inp => inp.onchange = () => {
+    wlGroups[+inp.dataset.i].triggers = inp.value.split(/[,，\s]+/).filter(Boolean);
+  });
+  document.querySelectorAll(".gCd").forEach(inp => inp.onchange = () => {
+    wlGroups[+inp.dataset.i].min_interval_s = parseFloat(inp.value) || 2;
+  });
+  document.querySelectorAll(".gProb").forEach(sl => {
+    const sync = () => {
+      const i = +sl.dataset.i, v = +sl.value;
+      sl.style.setProperty("--p", v);
+      wlGroups[i].chime_prob = v;
+      const lab = document.querySelector('.gProbVal[data-i="' + i + '"]');
+      if (lab) lab.textContent = probText(v);
+    };
+    sl.oninput = sync;
+    sl.onchange = sync;
+  });
+}
+
+$("btnWlSearch").onclick = async () => {
+  const q = $("wlQuery").value.trim();
+  $("wlResults").textContent = "搜索中…";
+  try{
+    const r = await api("/api/contacts?q=" + encodeURIComponent(q));
+    if (!r.ok){ $("wlResults").textContent = r.error || "搜索失败"; return; }
+    if (!r.items.length){ $("wlResults").textContent = "没搜到"; return; }
+    $("wlResults").innerHTML = r.items.map((c,i) =>
+      `<div style="margin:3px 0"><a href="#" class="wlAdd" data-i="${i}" style="color:#7fb2ff">+ ${esc(c.name)}</a>
+       <span class="hint"> ${c.type==="group"?"群":"好友"} ${esc(c.wxid)}</span></div>`).join("");
+    document.querySelectorAll(".wlAdd").forEach(a => a.onclick = (ev) => {
+      ev.preventDefault();
+      const c = r.items[+a.dataset.i];
+      if (c.type === "group"){
+        if (!wlGroups.some(g => g.wxid === c.wxid))
+          wlGroups.push({wxid:c.wxid, name:c.name || c.wxid, require_at:true, triggers:[], min_interval_s:2});
+      } else {
+        if (!wlFriends.some(f => f.wxid === c.wxid))
+          wlFriends.push({wxid:c.wxid, name:c.name || c.wxid});
+      }
+      renderWl();
+      $("wlResults").textContent = "已加入（记得点保存）";
+    });
+  }catch(e){ $("wlResults").textContent = "请求失败：" + e; }
+};
+
+$("btnWlSave").onclick = async () => {
+  $("btnWlSave").disabled = true;
+  try{
+    const r = await api("/api/whitelist", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({friends: wlFriends, groups: wlGroups})});
+    $("cfgMsg").textContent = r.ok ? (r.msg || "已保存") : (r.error || "保存失败");
+    if (r.ok) loadConfig();
+  }catch(e){ $("cfgMsg").textContent = "请求失败：" + e; }
+  finally{ $("btnWlSave").disabled = false; }
+};
+
+// ---- 配置 ----
+async function loadConfig(){
+  try{
+    const r = await api("/api/config");
+    if (!r.ok) { $("cfgMsg").textContent = r.error || "读取失败"; return; }
+    const c = r.config;
+    $("pGroup").value = c.persona.group || "";
+    $("pFriend").value = c.persona.friend || "";
+    wlFriends = (c.friends||[]).map(f => ({wxid:f.wxid, name:f.name}));
+    wlGroups = (c.groups||[]).map(g => ({wxid:g.wxid, name:g.name,
+      require_at: !!g.require_at, triggers: g.triggers||[], min_interval_s: g.min_interval_s||2}));
+    renderWl();
+  }catch(e){ $("cfgMsg").textContent = "请求失败：" + e; }
+}
+
+$("btnSaveCfg").onclick = async () => {
+  $("btnSaveCfg").disabled = true; $("cfgMsg").textContent = "保存中…";
+  try{
+    const r = await api("/api/config", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({persona:{group:$("pGroup").value, friend:$("pFriend").value}})});
+    $("cfgMsg").textContent = r.ok ? (r.msg || "已保存") : (r.error || "保存失败");
+    if (r.ok) loadConfig();
+  }catch(e){ $("cfgMsg").textContent = "请求失败：" + e; }
+  finally{ $("btnSaveCfg").disabled = false; }
+};
+
+loadConfig();
+
+$("btnSideToggle").onclick = () => {
+  $("side").classList.toggle("collapsed");
+};
+
+
+// ---------------- 记忆页 ----------------
+async function loadMemory(){
+  try{
+    const s = await api("/api/memory/stats");
+    if (!s.ok) { $("memKv").textContent = s.error || "读取失败"; return; }
+    $("memKv").innerHTML = [
+      ["画像卡", s.profiles + " 张"],
+      ["事实", s.facts + " 条"],
+      ["向量", s.vectors + " 条"],
+    ].map(([k,v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join("");
+    $("memEnabled").checked = !!s.enabled;
+    $("memFactsOn").checked = !!s.facts_enabled;
+    $("memVecOn").checked = !!s.vec_enabled;
+    $("memFmt").value = s.format || "ark_multimodal";
+    $("memUrl").value = s.url || "";
+    $("memModel").value = s.model || "";
+    $("memKeyEnv").value = s.key_env || "ARK_EMBED_KEY";
+    $("memStat").textContent = s.has_key ? "✅ 已配置密钥" : "未配置密钥";
+    loadMemFacts();
+  }catch(e){ $("memKv").textContent = "请求失败：" + e; }
+}
+
+async function loadMemFacts(){
+  try{
+    const r = await api("/api/memory/facts");
+    if (!r.ok || !r.items.length){ $("memFacts").innerHTML = '<span class="hint">还没记住任何事实</span>'; return; }
+    const groups = {};
+    r.items.forEach(x => { (groups[x.owner] = groups[x.owner] || []).push(x); });
+    $("memFacts").innerHTML = Object.keys(groups).map(owner => `
+      <div style="margin-bottom:10px">
+        <div class="hint" style="margin-bottom:4px">${esc(owner)}</div>
+        ${groups[owner].map(x => `<div class="wlLine" style="margin:2px 0">
+          <span style="flex:1">· ${esc(x.text)}</span>
+          <span class="hint">用了 ${x.used} 次</span>
+          <button class="memDel" data-id="${x.id}">删</button>
+        </div>`).join("")}
+      </div>`).join("");
+    document.querySelectorAll(".memDel").forEach(btn => btn.onclick = async () => {
+      const r2 = await api("/api/memory/facts/delete", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({id:+btn.dataset.id})});
+      if (r2.ok) loadMemory(); else alert(r2.error || "删除失败");
+    });
+  }catch(e){ $("memFacts").textContent = "加载失败：" + e; }
+}
+
+if ($("memPull")) {
+  $("memPull").onclick = async () => {
+    const el = $("memStat");
+    el.textContent = "拉取中…";
+    const r = await api("/api/memory/models", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({url: $("memUrl").value, key_env: $("memKeyEnv").value})});
+    if (!r.ok) { el.textContent = "❌ " + (r.error || "拉取失败"); return; }
+    if (!r.models || !r.models.length){ el.textContent = "服务没返回模型"; return; }
+    $("memList").innerHTML = r.models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+    $("memList").value = $("memModel").value || r.models[0];
+    $("memWrap").style.display = "flex";
+    el.textContent = "✅ " + r.msg + "，请在下拉里选";
+  };
+  $("memList").onchange = () => { $("memModel").value = $("memList").value; };
+}
+
+if ($("memSaveKey")) {
+  $("memSaveKey").onclick = async () => {
+    const v = $("memKey").value.trim();
+    if (!v) { $("memStat").textContent = "先粘贴密钥"; return; }
+    const r = await api("/api/secrets", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name: $("memKeyEnv").value || "ARK_EMBED_KEY", value: v})});
+    $("memStat").textContent = r.ok ? "✅ 密钥已保存" : (r.error || "保存失败");
+    if (r.ok) $("memKey").value = "";
+  };
+}
+
+if ($("memTest")) {
+  $("memTest").onclick = async () => {
+    $("memStat").textContent = "测试中…";
+    const r = await api("/api/memory/test", {method:"POST"});
+    $("memStat").textContent = r.ok ? ("✅ " + (r.dim || "可用")) : ("❌ " + (r.msg || "不可用"));
+  };
+}
+
+if ($("memSave")) {
+  $("memSave").onclick = async () => {
+    $("memMsg").textContent = "保存中…";
+    const r = await api("/api/memory/config", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        enabled: $("memEnabled").checked,
+        facts_enabled: $("memFactsOn").checked,
+        vec_enabled: $("memVecOn").checked,
+        format: $("memFmt").value,
+        url: $("memUrl").value,
+        model: $("memModel").value,
+        key_env: $("memKeyEnv").value,
+      })});
+    $("memMsg").textContent = r.ok ? (r.msg || "已保存") : (r.error || "保存失败");
+  };
+}
+
+
+refresh(); refreshLogs(); loadWinState(); loadSize();
+setInterval(loadWinState, 5000);
+setInterval(refresh, 3000);
+setInterval(refreshLogs, 2000);
+</script>
+
+</body>
+</html>

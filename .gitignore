@@ -1,0 +1,97 @@
+# 本地环境
+.venv/
+__pycache__/
+*.py[cod]
+install.log
+
+# 改造前备份
+.backup/
+
+# 探针产物（含账号/群/消息摘要，属隐私）
+probe-report.json
+
+# 运行期配置与水位（含白名单 wxid，不进仓库）
+config.json
+state.json
+history.json
+history.json.tmp
+bridge.log
+bridge.lock
+*.log
+wechatauto_logs/
+
+# 密钥
+.env
+!.env.example
+
+# 微信自动化产生的敏感文件
+keys.json
+*.db
+*.db-wal
+*.db-shm
+creds*.json
+wechatauto_db/
+wechatauto文件下载/
+
+# 模型与音频
+models/
+*.pth
+*.index
+tts_out/
+
+# 其余凭据/备份（开源前补）
+.env.*
+!.env.example
+config.json.*
+*.bak
+*.bak[0-9]*
+*.before-restore
+gui.token
+
+# 运行时产物
+sticker_map.json
+stickers_overflow.json
+uia_state.json
+memory.md
+memory.db
+memory.db-*
+image_desc.json
+stickers.json
+sticker_desc.json
+
+# 素材与截图（表情图可能涉版权，不随仓库分发）
+imgs/
+screenshots/
+*.png
+*.jpg
+*.jpeg
+!data_seed/**/*.png
+
+# 构建与打包
+dist/
+build/
+_archive/
+
+# 编辑器
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# 首次运行种子必须进仓库（被上面的 config.json 规则误伤，这里捞回来）
+!data_seed/config.json
+!data_seed/memory.md
+
+# 运行期日志与临时产物
+gui/shell.*
+*.err
+chat_summary.json
+diag_out.json
+emoji_key.json
+image_desc.json.bak-*
+sticker_desc.json.bak-*
+
+# 控制台运行期状态（含 token，绝不入仓库）
+gui/.token
+gui/active.json
+gui/wx_style.json
