@@ -1045,8 +1045,7 @@ async function loadConfig(){
     $("pGroup").value = c.persona.group || "";
     $("pFriend").value = c.persona.friend || "";
     wlFriends = (c.friends||[]).map(f => ({wxid:f.wxid, name:f.name}));
-    wlGroups = (c.groups||[]).map(g => ({wxid:g.wxid, name:g.name,
-      require_at: !!g.require_at, triggers: g.triggers||[], min_interval_s: g.min_interval_s||2}));
+    wlGroups = (c.groups||[]).map(g => ({wxid:g.wxid, name:g.name, require_at:!!g.require_at, triggers:g.triggers||[], min_interval_s:g.min_interval_s||2, chime_prob: (g.chime_prob===undefined||g.chime_prob===null) ? 0 : Number(g.chime_prob)}));
     renderWl();
   }catch(e){ $("cfgMsg").textContent = "请求失败：" + e; }
 }

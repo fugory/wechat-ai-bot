@@ -2408,7 +2408,14 @@ def _impl_uia_session_items_quiet():
     """
     names = []
     try:
-        import wxwin
+        try:
+            import wxwin
+        except Exception:
+            import sys as _sys
+            _g = os.path.join(HERE, "gui")
+            if _g not in _sys.path:
+                _sys.path.insert(0, _g)
+            import wxwin
         h = wxwin.find_wechat()
         if not h:
             return names
@@ -2463,7 +2470,8 @@ def uia_repair_ladder(force: bool = False) -> bool:
         except Exception:
             pass
         time.sleep(1.2)
-        if uia_session_items():
+        _probe = globals().get("uia_session_items") or _impl_uia_session_items
+        if _probe():
             log("UIA 修复成功：热激活（第 1 步）")
             return True
     except Exception as e:
@@ -2480,7 +2488,7 @@ def uia_repair_ladder(force: bool = False) -> bool:
                 bg.click_screen(*c)
                 time.sleep(0.8)
         time.sleep(1.0)
-        if uia_session_items():
+        if (globals().get("uia_session_items") or _impl_uia_session_items)():
             log("UIA 修复成功：切换 tab 重绘（第 2 步）")
             return True
     except Exception as e:
@@ -2497,7 +2505,7 @@ def uia_repair_ladder(force: bool = False) -> bool:
             time.sleep(1.0)
             ctypes.windll.user32.ShowWindow(h, 9)   # RESTORE
             time.sleep(1.5)
-        if uia_session_items():
+        if (globals().get("uia_session_items") or _impl_uia_session_items)():
             log("UIA 修复成功：最小化还原（第 3 步）")
             return True
     except Exception as e:
@@ -2533,7 +2541,7 @@ def uia_repair_ladder(force: bool = False) -> bool:
         subprocess.Popen([exe], cwd=os.path.dirname(exe))
         for _ in range(40):
             time.sleep(1.5)
-            if uia_session_items():
+            if (globals().get("uia_session_items") or _impl_uia_session_items)():
                 log("UIA 修复成功：重启微信（第 4 步）")
                 return True
         log("UIA 修复：重启后仍读不到 —— 可能停在扫码界面，请手动登录")
@@ -3210,6 +3218,14 @@ def sync_sticker_indices(db, path: str = "") -> int:
     except Exception:
         cap = 25
     overflow = []
+    if len(order) <= cap:
+        # 没有溢出了：把旧台账删掉，否则界面会一直提示"请删除"
+        try:
+            _p = os.path.join(HERE, "stickers_overflow.json")
+            if os.path.isfile(_p):
+                os.remove(_p)
+        except Exception:
+            pass
     if len(order) > cap:
         # 收藏表是「旧 → 新」：保留最新 cap 个，挤掉最旧的
         overflow = order[:-cap]
@@ -4588,9 +4604,6 @@ def _run(args: argparse.Namespace) -> int:
         return 130
 
 
-if __name__ == "__main__":
-    sys.exit(main())
-
 # ---------------- P0：UIA 串行锁包装 ----------------
 from uia_guard import uia_call  # noqa: E402
 try:
@@ -4627,3 +4640,6 @@ def uia_open_chat(name: str, tries: int = 2, wxid: Optional[str] = None) -> bool
     with uia_call("uia_open_chat"):
         return _impl_uia_open_chat(name, tries, wxid)
 
+
+if __name__ == "__main__":
+    sys.exit(main())

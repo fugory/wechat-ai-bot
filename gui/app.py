@@ -1075,11 +1075,19 @@ def _cfg_view(cfg):
             wxid_map[g_.get("name")] = g_.get("wxid", "")
     except Exception:
         pass
+    def _chime(g):
+        try:
+            v = float(g.get("chime_prob") or 0)
+        except Exception:
+            v = 0.0
+        return max(0.0, min(100.0, v))
+
     groups = [{"name": g.get("name", ""),
                "wxid": wxid_map.get(g.get("name", ""), ""),
                "require_at": g.get("require_at", True),
                "triggers": g.get("triggers") or [],
-               "min_interval_s": g.get("min_interval_s")}
+               "min_interval_s": g.get("min_interval_s"),
+               "chime_prob": _chime(g)}
               for g in (cfg.get("allow_groups") or []) if isinstance(g, dict)]
     return {
         "chat": {"url": bk.get("url", ""), "model": bk.get("model", ""),
@@ -1424,6 +1432,17 @@ def api_stickers_overflow():
                 data = json.load(f)
         over = data.get("overflow") or []
         desc = _load_json(DESC_PATH, {})
+        # 自愈：台账可能陈旧（用户已在微信里删了），按当前真实收藏过滤
+        live = set()
+        try:
+            sys.path.insert(0, ROOT)
+            import bridge as _b
+            _b.load_dotenv(os.path.join(ROOT, ".env"))
+            live = set(_b.sticker_order_md5s(_b._shared_db()))
+        except Exception:
+            pass
+        if live:
+            over = [m for m in over if m in live]
         return jsonify({"ok": True, "count": len(over), "at": data.get("at", ""),
                         "items": [{"md5": m, "tag": desc.get(m, "")} for m in over]})
     except Exception as e:
