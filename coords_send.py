@@ -21,11 +21,11 @@ COORD_PATH = os.path.join(HERE, "coords.json")
 
 # 相对客户区的比例（x, y）
 DEFAULT = {
-    "search": [0.139, 0.064],     # 搜索框
-    "input": [0.420, 0.825],      # 输入框
-    "emoji": [0.214, 0.924],      # 表情按钮 😊
-    "send": [0.926, 0.924],       # 发送按钮
-    "_note": "坐标是相对客户区的比例；窗口大小变化会自动换算",
+    "search": {"ax": "left",  "dx": 205, "ay": "top",    "dy": 70},
+    "input":  {"ax": "left",  "dx": 700, "ay": "bottom", "dy": -127},
+    "emoji":  {"ax": "left",  "dx": 322, "ay": "bottom", "dy": -51},
+    "send":   {"ax": "right", "dx": -71, "ay": "bottom", "dy": -51},
+    "_note": "以窗口边缘为锚点的绝对偏移；会话列表宽度固定，不能用比例",
 }
 
 u = ctypes.windll.user32
@@ -100,11 +100,17 @@ def client_box(hwnd):
 
 
 def point_of(hwnd, key: str):
-    """把比例换算成屏幕坐标。"""
+    """按"边缘锚点 + 绝对偏移"算屏幕坐标。"""
     d = load()
-    fx, fy = (d.get(key) or DEFAULT[key])[:2]
+    spec = d.get(key) or DEFAULT[key]
+    if isinstance(spec, (list, tuple)):      # 兼容旧格式（比例），直接换算
+        fx, fy = spec[0], spec[1]
+        x, y, w, h = client_box(hwnd)
+        return int(x + fx * w), int(y + fy * h)
     x, y, w, h = client_box(hwnd)
-    return int(x + fx * w), int(y + fy * h)
+    px = (x + spec["dx"]) if spec["ax"] == "left" else (x + w + spec["dx"])
+    py = (y + spec["dy"]) if spec["ay"] == "top" else (y + h + spec["dy"])
+    return int(px), int(py)
 
 
 # ---------------- 基础输入 ----------------
@@ -135,14 +141,32 @@ def foreground(hwnd) -> bool:
         return False
 
 
+def _wechat_pids():
+    try:
+        import psutil
+        return {p.pid for p in psutil.process_iter(["pid", "name"])
+                if (p.info.get("name") or "").lower() in ("weixin.exe", "wechat.exe")}
+    except Exception:
+        return set()
+
+
 def _assert_fg(hwnd) -> bool:
-    """按键前的前台守卫：必须是这个窗口、且可见、且没最小化。"""
+    """按键前的前台守卫：主窗口还在、且前台窗口属于微信进程。
+
+    不要求前台必须是主窗口 —— 微信的搜索弹窗、表情面板都是独立窗口，
+    但它们同属 Weixin 进程，往那里输入是安全的（不会打到别的程序）。
+    """
     try:
         if not hwnd or not u.IsWindow(hwnd):
             return False
         if not u.IsWindowVisible(hwnd) or u.IsIconic(hwnd):
             return False
-        return u.GetForegroundWindow() == hwnd
+        fg = u.GetForegroundWindow()
+        if fg == hwnd:
+            return True
+        pid = wt.DWORD()
+        u.GetWindowThreadProcessId(fg, ctypes.byref(pid))
+        return pid.value in _wechat_pids()
     except Exception:
         return False
 
@@ -218,13 +242,22 @@ def open_chat(hwnd, name: str) -> bool:
     time.sleep(1.0)
     key(VK_ESC)                    # 收起搜索面板
     time.sleep(0.4)
-    return True
+    # 搜索弹窗关闭会把焦点还给上一个窗口（可能是浏览器）→ 重新拉回微信
+    for _ in range(3):
+        foreground(hwnd)
+        time.sleep(0.35)
+        if _assert_fg(hwnd):
+            return True
+    return False
 
 
 def send_text(hwnd, text: str) -> bool:
     """点输入框 → 粘贴 → 回车。调用方负责数据库回读校验。"""
     if not foreground(hwnd):
-        return False
+        foreground(hwnd)
+        time.sleep(0.4)
+        if not foreground(hwnd):
+            return False
     x, y = point_of(hwnd, "input")
     click(x, y)
     if not _assert_fg(hwnd):
@@ -260,3 +293,139 @@ def calibrate(hwnd) -> dict:
     d["_measured_client"] = [w, h]
     save(d)
     return d
+
+# ---------------- 表情面板（纯坐标，不需要 UIA） ----------------
+
+PANEL_REF = 643.0
+PANEL_COLS = [101, 211, 321, 431, 541]
+PANEL_ROWS = [100, 210, 319, 430, 523]
+
+
+def find_panel():
+    """找表情面板窗口（独立弹窗；用窗口枚举，不碰 UIA）。"""
+    try:
+        import psutil
+        pids = {p.pid for p in psutil.process_iter(["pid", "name"])
+                if (p.info.get("name") or "").lower() in ("weixin.exe", "wechat.exe")}
+        if not pids:
+            return 0
+        found = []
+
+        def cb(h, _):
+            pid = wt.DWORD()
+            u.GetWindowThreadProcessId(h, ctypes.byref(pid))
+            if pid.value not in pids or not u.IsWindowVisible(h):
+                return True
+            cls = ctypes.create_unicode_buffer(256)
+            u.GetClassNameW(h, cls, 256)
+            if "ToolSaveBits" not in cls.value:
+                return True
+            r = wt.RECT()
+            u.GetWindowRect(h, ctypes.byref(r))
+            w, hh = r.right - r.left, r.bottom - r.top
+            if 300 < w < 900 and 300 < hh < 900:
+                found.append((w * hh, h))
+            return True
+
+        u.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p,
+                                        ctypes.c_void_p)(cb), 0)
+        found.sort(reverse=True)
+        return found[0][1] if found else 0
+    except Exception:
+        return 0
+
+
+def panel_cell_screen(panel_hwnd, row: int, col: int):
+    """把 (行,列) 换算成屏幕坐标。"""
+    r = wt.RECT()
+    u.GetWindowRect(panel_hwnd, ctypes.byref(r))
+    w, h = r.right - r.left, r.bottom - r.top
+    if w <= 0 or h <= 0:
+        return None
+    try:
+        fx = PANEL_COLS[int(col)] / PANEL_REF
+        fy = PANEL_ROWS[int(row)] / PANEL_REF
+    except Exception:
+        return None
+    return int(r.left + fx * w), int(r.top + fy * h)
+
+
+VK_ALT, VK_E, VK_ESC = 0x12, 0x45, 0x1B
+
+
+def toggle_panel_hotkey() -> None:
+    """Alt+E：微信自带的表情面板快捷键。"""
+    u.keybd_event(VK_ALT, 0, 0, 0)
+    time.sleep(0.05)
+    u.keybd_event(VK_E, 0, 0, 0)
+    time.sleep(0.05)
+    u.keybd_event(VK_E, 0, 2, 0)
+    u.keybd_event(VK_ALT, 0, 2, 0)
+
+
+def close_panel() -> None:
+    u.keybd_event(VK_ESC, 0, 0, 0)
+    u.keybd_event(VK_ESC, 0, 2, 0)
+    time.sleep(0.3)
+
+
+def open_panel_robust(hwnd) -> int:
+    """三级兜底开面板，返回面板句柄（0 = 没打开）。"""
+    if find_panel():
+        return find_panel()
+
+    import ctypes
+    import ctypes.wintypes as _wt
+    rr = _wt.RECT()
+    u.GetWindowRect(hwnd, ctypes.byref(rr))
+    W, H = rr.right - rr.left, rr.bottom - rr.top
+
+    # ① 模板匹配：只在"输入区工具条"那条窄带里找（避开聊天气泡里的表情）
+    try:
+        import locate_icon
+        band = (int(W * 0.18), int(H * 0.90), int(W * 0.55), H)
+        pos = locate_icon.locate(hwnd, "emoji", region=band)
+        if pos:
+            click(pos[0], pos[1], delay=1.8)
+            if find_panel():
+                return find_panel()
+    except Exception:
+        pass
+
+    # ② 锚点坐标
+    try:
+        x, y = point_of(hwnd, "emoji")
+        click(x, y, delay=1.8)
+        if find_panel():
+            return find_panel()
+    except Exception:
+        pass
+
+    # ③ Alt+E
+    try:
+        toggle_panel_hotkey()
+        time.sleep(1.6)
+        if find_panel():
+            return find_panel()
+    except Exception:
+        pass
+    return 0
+
+
+def send_sticker(hwnd, row: int, col: int, open_wait: float = 1.8) -> bool:
+    """开面板（三级兜底）→ 点格子 → 关面板。发没发出去由调用方读库确认。"""
+    if not _assert_fg(hwnd):
+        foreground(hwnd)
+        time.sleep(0.4)
+        if not _assert_fg(hwnd):
+            return False
+    panel = open_panel_robust(hwnd)
+    if not panel:
+        return False
+    pos = panel_cell_screen(panel, row, col)
+    if not pos:
+        close_panel()
+        return False
+    click(pos[0], pos[1], delay=1.0)
+    close_panel()
+    return True

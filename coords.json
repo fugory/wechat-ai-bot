@@ -1,26 +1,32 @@
 {
- "search": [
-  0.1386,
-  0.0737
+ "_cleared": "改用 DEFAULT 里的锚点偏移；如需自定义请直接改 coords.json 里同结构",
+ "emoji": {
+  "ax": "left",
+  "dx": 312,
+  "ay": "bottom",
+  "dy": -50
+ },
+ "_measured_client": [
+  1373,
+  948
  ],
- "input": [
-  0.4171,
-  0.8333
- ],
- "emoji": [
-  0.2143,
-  0.9333
- ],
- "send": [
-  0.9255,
-  0.9342
- ],
- "_note": "相对客户区的比例；窗口大小变化会自动换算",
- "_measured": {
-  "client": [
-   1652,
-   1140
-  ],
-  "at": "2026-10-26 17:15"
+ "_measured_at": "2026-10-26 18:36:59",
+ "search": {
+  "ax": "left",
+  "dx": 209,
+  "ay": "top",
+  "dy": 80
+ },
+ "input": {
+  "ax": "left",
+  "dx": 315,
+  "ay": "bottom",
+  "dy": -152
+ },
+ "send": {
+  "ax": "right",
+  "dx": -67,
+  "ay": "bottom",
+  "dy": -47
  }
 }

@@ -209,12 +209,50 @@ def panel_scroll_top(hw) -> None:
     panel_scroll(hw, up=True, times=8)
 
 
+def park_cursor(hwnd=None):
+    """把鼠标挪开，避免悬停高亮破坏切格/哈希。返回原位置（可直接传回 restore_cursor）。"""
+    import ctypes
+    import ctypes.wintypes as wt
+    u = ctypes.windll.user32
+    try:
+        pt = wt.POINT()
+        u.GetCursorPos(ctypes.byref(pt))
+        orig = (pt.x, pt.y)
+        inside = False
+        if hwnd:
+            r = wt.RECT()
+            u.GetWindowRect(hwnd, ctypes.byref(r))
+            if r.left <= pt.x <= r.right and r.top <= pt.y <= r.bottom:
+                inside = True
+        if inside:
+            u.SetCursorPos(5, 5)
+            time.sleep(0.35)
+            b.log("抓图前挪开鼠标（避免悬停高亮）：(%d,%d) -> (5,5)" % (orig[0], orig[1]))
+        return orig
+    except Exception:
+        return None
+
+
+def restore_cursor(pos):
+    if not pos:
+        return
+    try:
+        import ctypes
+        ctypes.windll.user32.SetCursorPos(int(pos[0]), int(pos[1]))
+    except Exception:
+        pass
+
+
 def panel_cells(bg, hw):
     """返回 [(index, cx, cy, img_crop)]，index 按行优先。
 
     逐行找列：不同表情宽高比不同，用全局列坐标会串行偏移。
     """
-    img = _grab(hw)
+    _cur = park_cursor(hw)
+    try:
+        img = _grab(hw)
+    finally:
+        restore_cursor(_cur)
     a = np.asarray(img).astype(np.int16)
     chroma = a.max(axis=2) - a.min(axis=2)
     bright = a.mean(axis=2)
@@ -305,9 +343,9 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
     if not hw:
         return False
     bg._click_panel_at(hw, _TAB[0], _TAB[1])
-    time.sleep(0.6)
+    time.sleep(0.9)
     panel_scroll_top(hw)
-    time.sleep(0.4)
+    time.sleep(0.5)
 
     # ④ 点之前先确认这一格就是目标（防止增删导致整体位移后发错图）
     try:
@@ -320,15 +358,47 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
             cell = img.crop(box)
             dist = min(hamming(th, dhash_trim(cell)) for th in target_hashes)
             if dist > 12:
-                b.log("坐标缓存已失效：%s 目标格距离 %d，改走全格匹配" % (want[:8], dist))
-                mm = load_map()
-                mm.pop(want, None)
-                save_map(mm)
+                b.log("目标格不像：%s 距离 %d —— 可能是 tab 没切过去，重点一次 tab 再校验"
+                      % (want[:8], dist))
+                bg._click_panel_at(hw, _TAB[0], _TAB[1])
+                time.sleep(1.2)
+                panel_scroll_top(hw)
+                time.sleep(0.6)
                 try:
-                    bg.close_emoji_panel()
+                    img2 = _grab(hw)
+                    cell2 = img2.crop(box)
+                    dist = min(hamming(th, dhash_trim(cell2)) for th in target_hashes)
+                    b.log("重试后距离：%d" % dist)
                 except Exception:
-                    pass
-                return False
+                    dist = 99
+                if dist > 20:
+                    # 仍然不像：按坐标点一次，用数据库回读做最终判断
+                    b.log("仍然不像（%d）：按坐标点一次，用数据库回读判定" % dist)
+                    bg._click_panel_at(hw, xy[0], xy[1])
+                    time.sleep(1.0)
+                    try:
+                        rows2 = db.get_messages(wxid, limit=2) or []
+                        got2 = ""
+                        if rows2:
+                            mm2 = re.search(r'md5\s*=\s*"?([0-9a-fA-F]{32})',
+                                            str(rows2[0].get("content") or ""))
+                            got2 = (mm2.group(1) or "").lower() if mm2 else ""
+                        if got2 == want:
+                            b.log("按坐标发送成功（数据库确认）：%s" % want[:8])
+                            b.PANEL_OPEN = True
+                            return True
+                        b.log("按坐标发送对不上：期望 %s 实发 %s"
+                              % (want[:8], (got2[:8] or "非表情")))
+                    except Exception as e:
+                        b.log("回读失败：%s" % e)
+                    mm = load_map()
+                    mm.pop(want, None)
+                    save_map(mm)
+                    try:
+                        bg.close_emoji_panel()
+                    except Exception:
+                        pass
+                    return False
     except Exception as e:
         b.log("发送前校验异常（继续按坐标发）：%s" % e)
 
@@ -565,3 +635,25 @@ if __name__ == "__main__":
         print("%-16s %s" % ((it.get("tag") or "")[:14], "OK" if r else "FAIL"))
         ok += r
     print("成功 %d/3" % ok)
+
+def map_fingerprint(db) -> str:
+    """收藏集合的指纹（md5 排序后拼接再取 md5），用来判断坐标表是否过期。"""
+    try:
+        import hashlib
+        order = b.sticker_order_md5s(db)
+        return hashlib.md5(("|".join(sorted(order))).encode()).hexdigest()[:16]
+    except Exception:
+        return ""
+
+
+def map_is_stale(db) -> bool:
+    m = load_map()
+    if not m:
+        return True
+    want = map_fingerprint(db)
+    got = m.get("_fingerprint")
+    if not got:
+        return False        # 老格式没有指纹，先不判失效
+    return want != got
+
+
