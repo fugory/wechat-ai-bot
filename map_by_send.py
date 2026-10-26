@@ -122,4 +122,26 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _guard_no_bot()
     sys.exit(main())
+
+
+def _guard_no_bot():
+    """bot 在跑时禁止做校准/连点，避免把微信点卡死。"""
+    import glob
+    import os
+    if os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "bridge.lock")):
+        raise SystemExit("检测到 bot 正在运行（bridge.lock 存在）："
+                         "请先停止 bot 再校准，避免高频点击把微信点卡死。")
+    try:
+        import psutil
+        for p in psutil.process_iter(["pid", "name", "cmdline"]):
+            cl = " ".join(p.info.get("cmdline") or [])
+            if "bridge.py" in cl and p.info.get("pid") != os.getpid():
+                raise SystemExit("检测到 bot 进程（pid=%s）：请先停止 bot 再校准。" % p.info.get("pid"))
+    except SystemExit:
+        raise
+    except Exception:
+        pass
+
+

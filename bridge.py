@@ -2378,6 +2378,8 @@ def _write_uia_state() -> None:
         tmp = UIA_STATE_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             payload = {"ok": _UIA_WATCH["ok"],
+                       "hung": bool(_UIA_WATCH.get("hung")),
+                       "next_try_in": max(0, int(float(_UIA_WATCH.get("next_try") or 0) - time.time())),
                        "fails": _UIA_WATCH["fails"],
                        "gave_up": _UIA_WATCH.get("gave_up", False),
                        "attempts": _UIA_WATCH.get("attempts", 0),
@@ -2446,6 +2448,7 @@ def _impl_uia_session_items_quiet():
 
 
 BACKOFF = [60, 300, 900]       # 自愈间隔：1 分钟 → 5 分钟 → 15 分钟
+MAX_ATTEMPTS = 4                # 连续失败这么多次就停手，等用户手工重启微信
 
 
 def uia_repair_ladder(force: bool = False) -> bool:
@@ -2567,6 +2570,33 @@ def uia_user_idle(seconds: int) -> bool:
         return True
 
 
+def _wechat_hung() -> bool:
+    """微信主窗口是否无响应（用户拖不动那种）。"""
+    try:
+        import wxwin
+        h = wxwin.find_wechat()
+        if not h:
+            return False
+        return bool(ctypes.windll.user32.IsHungAppWindow(h))
+    except Exception:
+        return False
+
+
+def uia_reset_after_restart() -> bool:
+    """用户重启微信后调用：清空卡死/放弃状态，允许重新探测。"""
+    _UIA_WATCH["hung"] = False
+    _UIA_WATCH["gave_up"] = False
+    _UIA_WATCH["fails"] = 0
+    _UIA_WATCH["attempts"] = 0
+    _UIA_WATCH["last_check"] = 0
+    _UIA_WATCH["last_heal"] = 0
+    _UIA_WATCH["next_try"] = 0
+    reset_uia()
+    ok = uia_healthy(force=True)
+    log("已重置 UIA 状态（重启后重试）：现在 %s" % ("正常" if ok else "仍不可用"))
+    return ok
+
+
 def uia_healthy(force: bool = False, interval: float = 300.0) -> bool:
     """轻量健康探测 + 退避自愈。返回当前是否健康。
 
@@ -2574,6 +2604,15 @@ def uia_healthy(force: bool = False, interval: float = 300.0) -> bool:
         已有 UIA 调用在进行时不插队。
     """
     now = time.time()
+
+    # 卡死：什么都不做（对着卡死的进程调 UIA 只会更糟）
+    if _UIA_WATCH.get("hung"):
+        return False
+
+    # 未到退避时间点：连探测都不做
+    if not force and now < float(_UIA_WATCH.get("next_try") or 0):
+        return _UIA_WATCH["ok"]
+
     if not force and now - _UIA_WATCH["last_check"] < interval:
         return _UIA_WATCH["ok"]
 
@@ -2593,6 +2632,15 @@ def uia_healthy(force: bool = False, interval: float = 300.0) -> bool:
         pass
 
     _UIA_WATCH["last_check"] = now
+
+    # 先看进程是不是卡死（卡死时 probe 会长时间阻塞且毫无意义）
+    if _wechat_hung():
+        _UIA_WATCH["hung"] = True
+        _UIA_WATCH["gave_up"] = True
+        _UIA_WATCH["ok"] = False
+        log("微信进程无响应（不是 UIA 问题）：已停止所有自动尝试，请手动重启微信")
+        _write_uia_state()
+        return False
 
     try:
         # 用库自己的扫描：只读探针在树上不可靠（恒返回 0，会误判坏了）
@@ -2621,18 +2669,20 @@ def uia_healthy(force: bool = False, interval: float = 300.0) -> bool:
         return False
 
     wait = BACKOFF[attempts] if attempts < len(BACKOFF) else None
-    if wait is None:
+    if attempts >= MAX_ATTEMPTS or wait is None:
         # 退避用尽：停止自动重试，只留提示
         _UIA_WATCH["gave_up"] = True
         _UIA_WATCH["ok"] = False
+        _UIA_WATCH["next_try"] = now + 86400      # 明天再说，别自己复活
         log("UIA 自愈已放弃（连续 %d 次失败）：请手动重启微信客户端，"
-            "或重启 bot 后再试" % _UIA_WATCH["fails"])
+            "重启后到状态页点「我重启好了」" % _UIA_WATCH["fails"])
         _write_uia_state()
         return False
 
     if now - _UIA_WATCH["last_heal"] >= wait:
         _UIA_WATCH["last_heal"] = now
         _UIA_WATCH["attempts"] = attempts + 1
+        _UIA_WATCH["next_try"] = now + (BACKOFF[min(attempts, len(BACKOFF) - 1)] if attempts < MAX_ATTEMPTS else 86400)
         # 先走修复阶梯（比单次 uia_heal 更有层次），成功就直接返回
         try:
             if uia_repair_ladder():
@@ -2670,7 +2720,9 @@ def uia_reset_watch() -> None:
 
 def uia_should_block() -> bool:
     """发送前调用：UIA 明确不健康时快速失败（force 探测一次）。"""
-    return not uia_healthy(force=True, interval=30.0)
+    # 只读当前状态，绝不在这里触发探测/自愈
+    # （原来这里 force 探一次，等于每次发送都锤一遍微信，是卡死的主要嫌疑）
+    return (not _UIA_WATCH["ok"]) or bool(_UIA_WATCH.get("hung")) or bool(_UIA_WATCH.get("gave_up"))
 
 
 def _impl_uia_heal(cfg=None) -> bool:

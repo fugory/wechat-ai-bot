@@ -182,6 +182,9 @@ def _uia_state() -> dict:
         with open(p, "r", encoding="utf-8-sig") as f:
             d = json.load(f)
         return {"ok": bool(d.get("ok")), "at": d.get("at", ""),
+                "hung": bool(d.get("hung")),
+                "gave_up": bool(d.get("gave_up")),
+                "next_try_in": int(d.get("next_try_in") or 0),
                 "fails": int(d.get("fails") or 0)}
     except Exception:
         return {"ok": None, "at": "", "fails": 0}
@@ -1066,6 +1069,20 @@ def api_status():
         "uia": _uia_state(),
         "server_time": time.strftime("%F %T"),
     })
+
+
+@app.post("/api/uia/reset")
+def api_uia_reset():
+    """用户重启微信后点一下：清空卡死/放弃状态并重新探测。"""
+    try:
+        sys.path.insert(0, ROOT)
+        import bridge as b
+        b.load_dotenv(os.path.join(ROOT, ".env"))
+        ok = b.uia_reset_after_restart()
+        return jsonify({"ok": True, "healthy": bool(ok),
+                        "msg": "已重置：" + ("UIA 正常" if ok else "仍然不可用，请确认微信用的是同一个账号")})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.get("/api/logs")
