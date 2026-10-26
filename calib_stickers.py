@@ -24,6 +24,11 @@ def main() -> int:
         b.load_dotenv(os.path.join(HERE, ".env"))
         db = b._shared_db()
         matched, unmatched = sm.calibrate_stickers(db)
+        if not matched and not unmatched:
+            out = {"ok": False,
+                   "error": "校准没有结果：表情面板没打开（先手动点一次表情按钮，再点校准）"}
+            print("CALIB_RESULT " + json.dumps(out, ensure_ascii=False))
+            return 0
         cfg = b.load_config()
         ec = cfg.setdefault("emoji", {})
         ec["hidden"] = [m for m, _d in unmatched]

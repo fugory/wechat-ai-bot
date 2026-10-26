@@ -2265,7 +2265,7 @@ def get_uia():
     return _UIA
 
 
-def uia_current_chat(ensure: bool = True) -> str:
+def _impl_uia_current_chat(ensure: bool = True) -> str:
     """读当前聊天标题。读不到时先 ensure_window() 唤醒一次——
     窗口没激活/没打开会话时 current_chat() 会返回空，这一步能恢复（实测有效）。"""
     try:
@@ -2332,7 +2332,7 @@ def session_index_from_db(name: str, wxid: Optional[str] = None) -> Optional[int
 CHAT_TAB_ICON = (42, 139)      # 左侧图标栏第一个图标（聊天）
 
 
-def uia_session_items():
+def _impl_uia_session_items():
     """当前 UIA 树里能看到的会话项名字列表。"""
     names = []
     try:
@@ -2377,17 +2377,31 @@ def _write_uia_state() -> None:
     try:
         tmp = UIA_STATE_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"ok": _UIA_WATCH["ok"],
+            payload = {"ok": _UIA_WATCH["ok"],
                        "fails": _UIA_WATCH["fails"],
                        "gave_up": _UIA_WATCH.get("gave_up", False),
                        "attempts": _UIA_WATCH.get("attempts", 0),
-                       "at": datetime.now().strftime("%F %T")}, f)
+                       "at": datetime.now().strftime("%F %T")}
+            try:
+                import uia_guard
+                st = uia_guard.snapshot()
+                payload["stats"] = {
+                    "calls": st.get("calls"), "errors": st.get("errors"),
+                    "slow": st.get("slow"),
+                    "max_call_ms": st.get("max_call_ms"),
+                    "lock_wait_ms": st.get("lock_wait_ms"),
+                    "last_hresult": st.get("last_hresult"),
+                    "last_error": st.get("last_error"),
+                }
+            except Exception:
+                pass
+            json.dump(payload, f, ensure_ascii=False)
         os.replace(tmp, UIA_STATE_PATH)
     except Exception:
         pass
 
 
-def uia_session_items_quiet():
+def _impl_uia_session_items_quiet():
     """只读探测：不激活窗口、不唤醒、不抢前台。
 
     给"健康看门狗"用——它每 90 秒跑一次，绝不能让微信跳出来。
@@ -2427,11 +2441,149 @@ def uia_session_items_quiet():
 BACKOFF = [60, 300, 900]       # 自愈间隔：1 分钟 → 5 分钟 → 15 分钟
 
 
-def uia_healthy(force: bool = False, interval: float = 90.0) -> bool:
-    """轻量健康探测 + 退避自愈。返回当前是否健康。"""
+def uia_repair_ladder(force: bool = False) -> bool:
+    """UIA 树挂了时的修复阶梯。返回是否修好。
+
+    只在"看门狗已经判定挂了"时调用，内部有节流，不会反复折腾。
+    """
+    now = time.time()
+    if not force and now - float(_UIA_WATCH.get("last_ladder") or 0) < 180:
+        return bool(_UIA_WATCH.get("ok"))
+    _UIA_WATCH["last_ladder"] = now
+
+    rp = ((load_config().get("wechat") or {}).get("repair") or {})
+    max_step = int(rp.get("max_step") or 3)
+
+    # 1) 热激活 + 重读
+    try:
+        reset_uia()
+        u = get_uia()
+        try:
+            u.ensure_window()
+        except Exception:
+            pass
+        time.sleep(1.2)
+        if uia_session_items():
+            log("UIA 修复成功：热激活（第 1 步）")
+            return True
+    except Exception as e:
+        log("修复第 1 步异常（忽略）：%s" % e)
+    if max_step < 2:
+        return False
+
+    # 2) 切两个 tab 强迫重绘（PostMessage，不抢焦点）
+    try:
+        bg = get_bg()
+        for name in ("通讯录", "微信"):
+            c = bg.uia_screen_center(lambda e, n=name: (e.Name or "") == n)
+            if c:
+                bg.click_screen(*c)
+                time.sleep(0.8)
+        time.sleep(1.0)
+        if uia_session_items():
+            log("UIA 修复成功：切换 tab 重绘（第 2 步）")
+            return True
+    except Exception as e:
+        log("修复第 2 步异常（忽略）：%s" % e)
+    if max_step < 3:
+        return False
+
+    # 3) 最小化 → 还原（会短暂抢焦点）
+    try:
+        import wxwin
+        h = wxwin.find_wechat()
+        if h:
+            ctypes.windll.user32.ShowWindow(h, 6)   # MINIMIZE
+            time.sleep(1.0)
+            ctypes.windll.user32.ShowWindow(h, 9)   # RESTORE
+            time.sleep(1.5)
+        if uia_session_items():
+            log("UIA 修复成功：最小化还原（第 3 步）")
+            return True
+    except Exception as e:
+        log("修复第 3 步异常（忽略）：%s" % e)
+
+    if not rp.get("auto_restart"):
+        log("UIA 修复：前三步都失败；自动重启微信未开启（wechat.repair.auto_restart=false）")
+        return False
+
+    # 4) 重启微信（可选）
+    try:
+        if not uia_user_idle(rp.get("idle_s") or 300):
+            log("UIA 修复：检测到你正在操作，暂不重启微信（空闲后再试）")
+            return False
+        exe = ""
+        try:
+            exe = ((load_config().get("wechat") or {}).get("exe_path") or "")
+        except Exception:
+            pass
+        if not exe or not os.path.isfile(exe):
+            log("UIA 修复：没有配置微信路径，无法自动重启")
+            return False
+        log("UIA 修复：准备重启微信（会自动重新登录；若停在扫码界面请手动扫）")
+        import psutil
+        for p in psutil.process_iter(["pid", "name"]):
+            if (p.info.get("name") or "").lower() in ("weixin.exe", "wechat.exe"):
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+        time.sleep(6)
+        import subprocess
+        subprocess.Popen([exe], cwd=os.path.dirname(exe))
+        for _ in range(40):
+            time.sleep(1.5)
+            if uia_session_items():
+                log("UIA 修复成功：重启微信（第 4 步）")
+                return True
+        log("UIA 修复：重启后仍读不到 —— 可能停在扫码界面，请手动登录")
+        return False
+    except Exception as e:
+        log("修复第 4 步异常：%s" % e)
+        return False
+
+
+def uia_user_idle(seconds: int) -> bool:
+    """最近 N 秒没有键鼠输入（用 GetLastInputInfo）。"""
+    try:
+        import ctypes
+        class LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+        li = LASTINPUTINFO()
+        li.cbSize = ctypes.sizeof(li)
+        ctypes.windll.user32.GetLastInputInfo(ctypes.byref(li))
+        tick = ctypes.windll.kernel32.GetTickCount()
+        idle_ms = tick - li.dwTime
+        return idle_ms >= seconds * 1000
+    except Exception:
+        return True
+
+
+def uia_healthy(force: bool = False, interval: float = 300.0) -> bool:
+    """轻量健康探测 + 退避自愈。返回当前是否健康。
+
+    P0：默认 300 秒（原 90 秒）；用户正在操作时不探（避免干扰）；
+        已有 UIA 调用在进行时不插队。
+    """
     now = time.time()
     if not force and now - _UIA_WATCH["last_check"] < interval:
         return _UIA_WATCH["ok"]
+
+    # 已有 UIA 调用在进行 → 不插队
+    try:
+        import uia_guard
+        if not force and uia_guard.busy():
+            return _UIA_WATCH["ok"]
+    except Exception:
+        pass
+
+    # 用户最近 60 秒有输入 → 只在"已经坏了"的时候才探（坏了要修）
+    try:
+        if not force and _UIA_WATCH["ok"] and not uia_user_idle(60):
+            return _UIA_WATCH["ok"]
+    except Exception:
+        pass
+
     _UIA_WATCH["last_check"] = now
 
     try:
@@ -2473,6 +2625,16 @@ def uia_healthy(force: bool = False, interval: float = 90.0) -> bool:
     if now - _UIA_WATCH["last_heal"] >= wait:
         _UIA_WATCH["last_heal"] = now
         _UIA_WATCH["attempts"] = attempts + 1
+        # 先走修复阶梯（比单次 uia_heal 更有层次），成功就直接返回
+        try:
+            if uia_repair_ladder():
+                _UIA_WATCH["ok"] = True
+                _UIA_WATCH["fails"] = 0
+                _UIA_WATCH["attempts"] = 0
+                _write_uia_state()
+                return True
+        except Exception:
+            pass
         log("UIA 不健康，第 %d 次自愈（下次间隔 %s 秒）"
             % (_UIA_WATCH["attempts"], BACKOFF[_UIA_WATCH["attempts"]]
                if _UIA_WATCH["attempts"] < len(BACKOFF) else "不再重试"))
@@ -2503,7 +2665,7 @@ def uia_should_block() -> bool:
     return not uia_healthy(force=True, interval=30.0)
 
 
-def uia_heal(cfg=None) -> bool:
+def _impl_uia_heal(cfg=None) -> bool:
     """尝试恢复 UIA 树。返回是否恢复成功。带冷却，避免死循环里反复折腾。"""
     now = time.time()
     if now - float(_UIA_HEAL["last"]) < 20:      # 20 秒内只尝试一次
@@ -2574,7 +2736,7 @@ def ensure_chat_tab(force: bool = False) -> bool:
     return len(names) >= 2
 
 
-def uia_find_session(name: str):
+def _impl_uia_find_session(name: str):
     """在 UIA 树里按名字找会话项，返回元素或 None。"""
     try:
         u = get_uia()
@@ -2599,7 +2761,7 @@ def uia_find_session(name: str):
         return None
 
 
-def uia_click_session(name: str) -> bool:
+def _impl_uia_click_session(name: str) -> bool:
     """按名字点会话项。返回是否成功点到（不代表已切换完成）。"""
     el = uia_find_session(name)
     if el is None:
@@ -2642,7 +2804,7 @@ def close_panel_if_open() -> None:
     PANEL_OPEN = False
 
 
-def uia_open_chat(name: str, tries: int = 2, wxid: Optional[str] = None) -> bool:
+def _impl_uia_open_chat(name: str, tries: int = 2, wxid: Optional[str] = None) -> bool:
     close_panel_if_open()
     """切到目标会话。
 
@@ -4293,7 +4455,7 @@ def _run(args: argparse.Namespace) -> int:
                     mem_maintain(_memdb, load_config())
                 except Exception:
                     pass
-                time.sleep(30)
+                time.sleep(60)
         _th.Thread(target=_watch, daemon=True).start()
         log("UIA 看门狗已启动（每 90 秒探测一次）")
     except Exception as _e:
@@ -4428,3 +4590,40 @@ def _run(args: argparse.Namespace) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# ---------------- P0：UIA 串行锁包装 ----------------
+from uia_guard import uia_call  # noqa: E402
+try:
+    import uia_guard as _ug
+    _ug.set_logger(log)
+except Exception:
+    pass
+
+def uia_current_chat(ensure: bool = True) -> str:
+    with uia_call("uia_current_chat"):
+        return _impl_uia_current_chat(ensure)
+
+def uia_session_items():
+    with uia_call("uia_session_items"):
+        return _impl_uia_session_items()
+
+def uia_session_items_quiet():
+    with uia_call("uia_session_items_quiet"):
+        return _impl_uia_session_items_quiet()
+
+def uia_heal(cfg=None) -> bool:
+    with uia_call("uia_heal"):
+        return _impl_uia_heal(cfg)
+
+def uia_find_session(name: str):
+    with uia_call("uia_find_session"):
+        return _impl_uia_find_session(name)
+
+def uia_click_session(name: str) -> bool:
+    with uia_call("uia_click_session"):
+        return _impl_uia_click_session(name)
+
+def uia_open_chat(name: str, tries: int = 2, wxid: Optional[str] = None) -> bool:
+    with uia_call("uia_open_chat"):
+        return _impl_uia_open_chat(name, tries, wxid)
+

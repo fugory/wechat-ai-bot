@@ -1000,3 +1000,24 @@ class BgWeChat:
         if not self.open_index(index, name):
             return False
         return self.type_and_send(text)
+
+# ---------------- P0：UIA 串行锁（monkey-patch，不改原方法） ----------------
+try:
+    from uia_guard import uia_call as _uia_call
+
+    def _wrap_method(cls, name):
+        orig = getattr(cls, name)
+
+        def wrapped(self, *a, **kw):
+            with _uia_call("bg." + name):
+                return orig(self, *a, **kw)
+
+        wrapped.__name__ = name
+        wrapped.__doc__ = getattr(orig, "__doc__", None)
+        setattr(cls, name, wrapped)
+
+    for _m in ("uia_center", "uia_chat_title", "uia_screen_center", "click_screen", "_click_panel_at"):
+        if hasattr(BgWeChat, _m):
+            _wrap_method(BgWeChat, _m)
+except Exception as _e:  # pragma: no cover
+    print("[wxbg] UIA 锁包装失败（忽略）：%s" % _e)

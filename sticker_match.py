@@ -154,7 +154,9 @@ def _grab(hw):
     u.GetWindowRect(hw, ctypes.byref(r))
     w, h = r.right - r.left, r.bottom - r.top
     if w <= 0 or h <= 0:
-        raise RuntimeError('窗口尺寸异常')
+        # 面板没打开 / 句柄失效：返回一张空图，由调用方按"没格子"处理
+        b.log("抓图失败：窗口尺寸为 %dx%d（面板可能没打开）" % (w, h))
+        return Image.new("RGB", (1, 1))
     hdc = u.GetWindowDC(hw)
     mem = gdi.CreateCompatibleDC(hdc)
     bmp = gdi.CreateCompatibleBitmap(hdc, w, h)
@@ -404,6 +406,8 @@ def calibrate_stickers(db, threshold: int = 12):
         cells, _g = panel_cells(bg, hw)
         page_cells = cells
         all_hashes = [dhash_trim(crop) for _i, _x, _y, crop in cells]
+        if not cells:
+            b.log("校准失败：表情面板没打开或没画出格子（先手动点一次表情按钮再试）")
         panel_scroll_top(hw)
         b.log("校准：采集到 %d 个面板格子" % len(all_hashes))
         if not all_hashes:

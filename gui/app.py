@@ -623,23 +623,59 @@ def api_wechat_launch():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+def _py_exe():
+    """返回可用的 python 解释器路径；打包版返回 None（改用进程内执行）。"""
+    if getattr(sys, "frozen", False):
+        return None
+    cands = [sys.executable,
+             os.path.join(ROOT, ".venv", "Scripts", "python.exe")]
+    for p in cands:
+        if p and os.path.isfile(p) and os.path.basename(p).lower().startswith("python"):
+            return p
+    return None
+
+
+def _run_inprocess(mod_name: str, arg_mode: bool = True):
+    """在当前进程里跑一个脚本模块，抓它的 stdout，返回 (ok, 文本)。"""
+    import contextlib
+    import importlib
+    buf = io.StringIO()
+    try:
+        sys.path.insert(0, ROOT)
+        mod = importlib.import_module(mod_name)
+        argv_backup = sys.argv
+        try:
+            sys.argv = [mod_name] + (["--json"] if arg_mode else [])
+            with contextlib.redirect_stdout(buf):
+                mod.run(json_mode=arg_mode) if hasattr(mod, "run") else mod.main()
+        finally:
+            sys.argv = argv_backup
+        return True, buf.getvalue()
+    except Exception as e:
+        return False, buf.getvalue() + "\n[in-process] %s" % e
+
+
 @app.post("/api/uia/diagnose")
 def api_uia_diagnose():
     """跑独立进程诊断 UIA 树：分清"可恢复"还是"必须重启微信"。"""
     try:
         import subprocess as sp
-        py = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
-        if not os.path.isfile(py):
-            py = sys.executable
-        p = sp.run([py, "diag_uia_tree.py", "--json"], cwd=ROOT, capture_output=True,
-                   text=True, timeout=180, encoding="utf-8", errors="replace")
+        out = ""
+        py = _py_exe()
+        if py:
+            if not os.path.isfile(os.path.join(ROOT, "diag_uia_tree.py")):
+                return jsonify({"ok": False, "error": "缺少 diag_uia_tree.py（被误删？）"})
+            p = sp.run([py, "diag_uia_tree.py", "--json"], cwd=ROOT, capture_output=True,
+                       text=True, timeout=180, encoding="utf-8", errors="replace")
+            out = (p.stdout or "") + (p.stderr or "")
+        else:
+            ok_ip, out = _run_inprocess("diag_uia_tree", True)
         line = ""
-        for ln in (p.stdout or "").splitlines():
+        for ln in out.splitlines():
             if ln.startswith("DIAG_RESULT "):
                 line = ln[len("DIAG_RESULT "):]
         if not line:
-            return jsonify({"ok": False,
-                            "error": "诊断没有输出结果：" + (p.stderr or "")[-200:]})
+            return jsonify({"ok": False, "error": "诊断没有输出结果：" + out[-300:]})
         d = json.loads(line)
         d["ok"] = True
         return jsonify(d)
@@ -752,12 +788,28 @@ def api_memory_models():
 def api_memory_test():
     try:
         import subprocess as sp
-        py = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
-        if not os.path.isfile(py):
-            py = sys.executable
-        p = sp.run([py, "check_embed.py"], cwd=ROOT, capture_output=True, text=True,
-                   timeout=120, encoding="utf-8", errors="replace")
-        out = (p.stdout or "") + (p.stderr or "")
+        out = ""
+        py = _py_exe()
+        if py and os.path.isfile(os.path.join(ROOT, "check_embed.py")):
+            p = sp.run([py, "check_embed.py"], cwd=ROOT, capture_output=True, text=True,
+                       timeout=120, encoding="utf-8", errors="replace")
+            out = (p.stdout or "") + (p.stderr or "")
+        else:
+            # 打包版：直接在当前进程里测一次 embedding
+            try:
+                sys.path.insert(0, ROOT)
+                sys.path.insert(0, HERE)
+                import bridge as _b
+                _b.load_dotenv(os.path.join(ROOT, ".env"))
+                cfg = _load_cfg()
+                probe = dict(cfg)
+                probe["memory_v2"] = dict(cfg.get("memory_v2") or {})
+                v3 = dict(probe["memory_v2"].get("v3") or {})
+                probe["memory_v2"]["v3"] = dict(v3, enabled=True)
+                vec = _b._mem_embed(probe, "测试")
+                out = ("✅ 可用，向量维度 %d" % len(vec)) if vec else "❌ 不可用（看日志）"
+            except Exception as _e:
+                out = "❌ 进程内测试失败：%s" % _e
         ok = "✅" in out
         dim = ""
         for line in out.splitlines():
@@ -1340,9 +1392,13 @@ def api_stickers_calibrate():
     """校准：跑独立子进程（GUI 进程里 UIA 不可用）。"""
     try:
         import subprocess as sp
-        py = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
-        if not os.path.isfile(py):
-            py = sys.executable
+        py = _py_exe()
+        if not py:
+            return jsonify({"ok": False,
+                            "error": "打包版不支持校准（需要 Python 环境）；"
+                                     "可改用「同步表情」，或直接用源码运行"})
+        if not os.path.isfile(os.path.join(ROOT, "calib_stickers.py")):
+            return jsonify({"ok": False, "error": "缺少 calib_stickers.py"})
         p = sp.run([py, "calib_stickers.py"], cwd=ROOT, capture_output=True,
                    text=True, timeout=240, encoding="utf-8", errors="replace")
         line = ""
@@ -1350,8 +1406,8 @@ def api_stickers_calibrate():
             if ln.startswith("CALIB_RESULT "):
                 line = ln[len("CALIB_RESULT "):]
         if not line:
-            return jsonify({"ok": False,
-                            "error": "校准进程没有输出结果：" + (p.stderr or "")[-200:]})
+            tail = ((p.stderr or "") + (p.stdout or ""))[-300:]
+            return jsonify({"ok": False, "error": "校准进程没有输出结果：" + tail})
         return jsonify(json.loads(line))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
