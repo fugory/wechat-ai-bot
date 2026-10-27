@@ -99,3 +99,6 @@ gui/wx_style.json
 # README æˆªå›¾è¦è¿›ä»“åº“ï¼ˆåªæ”¾è¡Œ docs/imagesï¼‰
 !docs/images/
 !docs/images/*.png
+
+# ±¾»ú×ø±êĞ£×¼Öµ£¨Ã¿¸öÈËÆÁÄ»²»Í¬£¬²»½ø²Ö¿â£©
+coords.json

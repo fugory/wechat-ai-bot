@@ -139,6 +139,29 @@
 </nav>
 <div class="content">
 
+
+<!-- ========== 首启引导（纯文字） ========== -->
+<div id="firstRun" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);
+     z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;
+       max-width:460px;padding:22px 24px;line-height:1.9;color:#e6edf3;
+       font-family:system-ui,'Microsoft YaHei',sans-serif">
+    <h2 style="margin:0 0 12px;font-size:16px">第一次用，先做这三件事</h2>
+    <div style="font-size:13.5px">
+      <div style="margin:6px 0"><b>①</b> 打开「模型」页，填上 DeepSeek 的 Key（必填）</div>
+      <div style="margin:6px 0"><b>②</b> 打开「人格」页，把要它参与的群加进白名单</div>
+      <div style="margin:6px 0"><b>③</b> 回到「状态」页，点「启动」</div>
+      <div style="margin-top:12px;color:#8b949e">
+        另外两件事：微信要登录着、别最小化；<br>
+        想让它发表情，先去「表情」页同步一次。
+      </div>
+    </div>
+    <div style="margin-top:16px;text-align:right">
+      <button id="frOk" class="primary" style="padding:6px 16px">知道了</button>
+    </div>
+  </div>
+</div>
+
 <!-- ========== 状态 ========== -->
 <div class="view active" id="view-status">
   <main>
@@ -1105,6 +1128,23 @@ async function loadRhythm(){
       (r.used >= r.burst ? '<br><b style="color:#e5484d">正在冷却，最多 ' + r.cooloff[1] + ' 秒后继续</b>' : '');
   }catch(e){}
 }
+
+// 首启引导：白名单为空时弹一次纯文字说明
+function maybeFirstRun(cfg){
+  try{
+    if (localStorage.getItem("fr_seen") === "1") return;
+    const g = (cfg.groups || []).length, f = (cfg.friends || []).length;
+    if (g + f > 0) return;
+    const el = $("firstRun");
+    if (!el) return;
+    el.style.display = "flex";
+    const btn = $("frOk");
+    if (btn) btn.onclick = () => {
+      el.style.display = "none";
+      try{ localStorage.setItem("fr_seen", "1"); }catch(e){}
+    };
+  }catch(e){}
+}
 // ---------------- 坐标校准 ----------------
 let cdNames = {};
 async function loadCoords(){
@@ -1261,6 +1301,14 @@ refresh(); refreshLogs(); loadWinState(); loadSize();
 setInterval(loadWinState, 5000);
 setInterval(refresh, 3000);
 setInterval(refreshLogs, 2000);
+
+// 启动时单独拉一次配置，判断是否首启
+(async () => {
+  try{
+    const r = await api("/api/config");
+    if (r && r.ok) maybeFirstRun(r.config || {});
+  }catch(e){}
+})();
 </script>
 
 </body>
