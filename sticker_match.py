@@ -323,6 +323,15 @@ def cell_xy(row: int, col: int):
 
 def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
     """按缓存坐标发一个表情。返回 True=已发出且校验一致。"""
+
+    # 坐标表必须和"当前收藏集合"匹配，否则行列会错、还会点错格子
+    try:
+        if map_is_stale(db):
+            b.log("坐标表已过期（收藏变了）：不用缓存坐标，改走面板匹配")
+            return False
+    except Exception:
+        pass
+
     import re
     want = (md5 or "").lower()
     m = load_map().get(want)
@@ -575,35 +584,45 @@ def send_sticker_by_md5(db, wxid: str, name: str, md5: str,
                       i, cx, cy, crop)
                      for i, cx, cy, crop in cells), key=lambda x: x[0])
     best = scored[0][0]
-    b.log("面板匹配：共 %d 格，最佳距离 %d" % (len(cells), best))
-    if best > 12:
-        # 不够像就宁可放弃：错发比不发更糟
-        bg.close_emoji_panel()
-        b.log("面板里没有这张（最佳距离 %d 过大），放弃发送" % best)
-        return False
+    b.log("面板匹配：第 1 页共 %d 格，最佳距离 %d" % (len(cells), best))
 
-    pages = []
-    pages.append(scored)
-    # 第一页不够像 → 往后翻页再试
+    # 第一页不够像 → 真的翻页再找（之前这里提前 return，翻页是死代码）
+    pages = [scored]
     for _page in range(2):
-        if pages[-1] and pages[-1][0][0] <= 12:
+        if best <= 12:
             break
         panel_scroll(hw, up=False, times=3)
-        time.sleep(0.5)
+        time.sleep(0.6)
         more, _g2 = panel_cells(bg, hw)
         if not more:
             break
         scored2 = sorted(((min(hamming(th, dhash_trim(crop)) for th in target_hashes),
                            i, cx, cy, crop)
                           for i, cx, cy, crop in more), key=lambda x: x[0])
-        # 只有在比上一页更像时才用新页
-        if scored2 and (not pages[-1] or scored2[0][0] < pages[-1][0][0]):
+        b.log("  翻到第 %d 页：共 %d 格，最佳距离 %d"
+              % (len(pages) + 1, len(more), scored2[0][0] if scored2 else 99))
+        if scored2 and scored2[0][0] < best:
             pages.append(scored2)
+            best = scored2[0][0]
         else:
             break
 
-    best_page = min(pages, key=lambda pg: pg[0][0] if pg else 99)
-    scored = best_page
+    if best > 12:
+        bg.close_emoji_panel()
+        b.log("面板里没有这张（翻完 %d 页，最佳距离 %d 过大），放弃发送"
+              % (len(pages), best))
+        return False
+
+    # 翻过页就回到顶部，避免点错行
+    panel_scroll_top(hw)
+    time.sleep(0.4)
+    cells2, _g3 = panel_cells(bg, hw)
+    if cells2 and len(cells2) >= 20:
+        scored = sorted(((min(hamming(th, dhash_trim(crop)) for th in target_hashes),
+                          i, cx, cy, crop)
+                         for i, cx, cy, crop in cells2), key=lambda x: x[0])
+    else:
+        scored = min(pages, key=lambda pg: pg[0][0] if pg else 99)
 
     for dist, idx, cx, cy, _crop in scored[:max_try]:
         # 点击必须发给**面板窗口**（主窗口收不到），坐标是面板内坐标
@@ -617,6 +636,21 @@ def send_sticker_by_md5(db, wxid: str, name: str, md5: str,
         if got == want:
             bg.close_emoji_panel()
             b.log("表情发送确认：md5=%s（第 %d 格，距离 %d）" % (got[:8], idx, dist))
+            # 自愈：第一页命中的话，把位置记进坐标表，下次就不用再匹配
+            try:
+                from_first_page = bool(pages and scored is pages[0])
+                if from_first_page and 0 <= idx < 25:
+                    mp = load_map()
+                    mp[want] = {"row": idx // 5, "col": idx % 5}
+                    try:
+                        mp["_fingerprint"] = map_fingerprint(db)
+                    except Exception:
+                        pass
+                    save_map(mp)
+                    b.log("坐标表已补全：%s → 第%d行第%d列"
+                          % (want[:8], idx // 5, idx % 5))
+            except Exception as _e:
+                b.log("坐标表补全失败（忽略）：%s" % _e)
             return True
         b.log("第 %d 格不是目标（发的是 %s），换下一个" % (idx, got[:8] or "非表情"))
     bg.close_emoji_panel()

@@ -110,6 +110,10 @@ def main() -> int:
         else:
             print("  (%d,%d) → 没读到 md5" % (row, col))
 
+    try:
+        mapping["_fingerprint"] = sm.map_fingerprint(db)
+    except Exception as _e:
+        print("指纹写入失败（不影响映射）：%s" % _e)
     sm.save_map(mapping)
     print("已写入 sticker_map.json：%d 条" % len(mapping))
     try:
