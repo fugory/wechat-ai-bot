@@ -102,3 +102,6 @@ gui/wx_style.json
 
 # 本机坐标校准值（每个人屏幕不同，不进仓库）
 coords.json
+
+# 文档备份
+*.bak-split
