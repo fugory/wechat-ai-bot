@@ -4215,6 +4215,42 @@ def send(db, name: str, text: str, wxid: Optional[str] = None) -> bool:
     return dispatch_send(db, wxid, name, text)
 
 
+def apply_rhythm_config() -> None:
+    """把 config.rhythm 套到库的拟人节奏上（放宽冷却，保留间隔）。"""
+    try:
+        from wechatauto import rhythm as R
+        rc = (load_config().get("rhythm") or {})
+        prof = (rc.get("profile") or "natural").strip().lower()
+        if prof in ("natural", "calm", "fast", "off"):
+            R.set_profile(prof)
+        kw = {}
+        try:
+            b = int(rc.get("burst") or 0)
+            if b > 0:
+                kw["burst"] = b
+        except Exception:
+            pass
+        try:
+            c = rc.get("cooloff") or []
+            if len(c) == 2:
+                kw["cooloff"] = (float(c[0]), float(c[1]))
+        except Exception:
+            pass
+        try:
+            w = float(rc.get("window") or 0)
+            if w > 0:
+                kw["window"] = w
+        except Exception:
+            pass
+        if kw:
+            R.configure(**kw)
+        p = R.profile()
+        log("拟人节奏：%s ｜ %ds 内最多写 %d 次 ｜ 超限冷却 %.0f~%.0f 秒"
+            % (p.name, p.window, p.burst, p.cooloff[0], p.cooloff[1]))
+    except Exception as e:
+        log("应用拟人节奏配置失败（忽略）：%s" % e)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="ai-chat-bot M1 好友私聊闭环")
     ap.add_argument("--live", action="store_true", help="真的发消息（默认 dry-run）")
@@ -4232,6 +4268,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--check-api", action="store_true",
                     help="只测模型通道：打一次极短的请求，验证 url/model/key 是否通")
     args = ap.parse_args(argv)
+    apply_rhythm_config()
 
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

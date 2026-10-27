@@ -162,6 +162,8 @@
       <div id="wxSizeMsg" class="hint">拖动微信窗口到你想要的大小，然后点「同步当前尺寸」</div>
 
     <section class="card">
+      <h2 style="margin-top:16px">拟人节流</h2>
+      <div id="rhythmLine" class="hint" style="line-height:1.8;margin-bottom:8px">—</div>
       <h2>坐标校准（表情/发送走坐标通道用）</h2>
       <div class="hint" style="line-height:1.8;margin-bottom:8px">
         点下面任意按钮 → <b>3 秒内</b>把鼠标移到微信里对应的位置停住 → 时间到自动记录。<br>
@@ -657,6 +659,7 @@ document.querySelector('.nav-item[data-view="memory"]').addEventListener("click"
 });
 document.querySelector('.nav-item[data-view="status"]').addEventListener("click", () => {
   loadCoords();
+  loadRhythm();
 });
 
 // 深链：?view=bench 直接打开测试台（必须在事件绑定之后）
@@ -1086,6 +1089,22 @@ $("btnSideToggle").onclick = () => {
 
 
 
+
+async function loadRhythm(){
+  try{
+    const r = await api("/api/rhythm");
+    const el = $("rhythmLine"); if (!el) return;
+    if (!r.ok) { el.textContent = "读取失败：" + (r.error||""); return; }
+    const pct = r.burst ? Math.round(r.used / r.burst * 100) : 0;
+    let color = "#3fb950";
+    if (r.used >= r.burst) color = "#e5484d";
+    else if (r.near_limit) color = "#d29922";
+    el.innerHTML = `档位 <b>${r.profile}</b> ｜ 近 ${r.window} 秒已发 ` +
+      `<b style="color:${color}">${r.used}/${r.burst}</b> ｜ ` +
+      `超限冷却 ${r.cooloff[0]}~${r.cooloff[1]} 秒` +
+      (r.used >= r.burst ? '<br><b style="color:#e5484d">正在冷却，最多 ' + r.cooloff[1] + ' 秒后继续</b>' : '');
+  }catch(e){}
+}
 // ---------------- 坐标校准 ----------------
 let cdNames = {};
 async function loadCoords(){

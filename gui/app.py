@@ -1085,6 +1085,39 @@ def api_uia_reset():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.get("/api/rhythm")
+def api_rhythm():
+    """拟人节流的实时状态：档位 + 窗口内已写次数。"""
+    try:
+        import json as _j
+        import os as _os
+        st = {}
+        p = _os.path.join(_os.path.expanduser("~"), ".wechatauto", "rhythm.json")
+        if _os.path.isfile(p):
+            with open(p, "r", encoding="utf-8-sig") as f:
+                st = _j.load(f) or {}
+        stamps = st.get("stamps") or []
+        now = time.time()
+        try:
+            sys.path.insert(0, ROOT)
+            import bridge as _b
+            prof = _b.load_config().get("rhythm") or {}
+        except Exception:
+            prof = {}
+        window = float(prof.get("window") or 120)
+        burst = int(prof.get("burst") or 12)
+        recent = [x for x in stamps if 0 <= now - x <= window]
+        last = max(recent) if recent else 0
+        cool = (prof.get("cooloff") or [8, 15])
+        return jsonify({"ok": True, "profile": prof.get("profile") or st.get("profile") or "natural",
+                        "window": window, "burst": burst,
+                        "used": len(recent), "last_age": int(now - last) if last else -1,
+                        "cooloff": cool,
+                        "near_limit": len(recent) >= max(1, burst - 2)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.get("/api/logs")
 def api_logs():
     n = min(int(request.args.get("n") or 200), 1000)
