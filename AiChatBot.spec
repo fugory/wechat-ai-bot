@@ -27,13 +27,15 @@ hidden += ["flask", "webview", "PIL", "psutil", "cryptography",
 datas = [
     (os.path.join(ROOT, "gui", "static"), "gui/static"),
     (os.path.join(ROOT, "data_seed"), "data_seed"),
+    (os.path.join(ROOT, "imgs", "ui"), "imgs/ui"),
 ]
 
 # 需要的项目模块（.py 直接带上，bridge 会 import 它们）
 for mod in ("bridge.py", "wxbg.py", "sticker_vision.py", "rolling_summary.py",
             "memory_store.py", "sticker_match.py", "wininput.py",
             "diag_uia_tree.py", "check_embed.py", "calib_stickers.py",
-            "sticker_match.py", "wininput.py"):
+            "locate_icon.py", "uia_guard.py", "coords_send.py",
+            "map_by_send.py"):
     p = os.path.join(ROOT, mod)
     if os.path.isfile(p):
         datas.append((p, "."))
