@@ -276,6 +276,15 @@
       （在微信里右键表情 → 添加到表情，再点上面的「从微信收藏同步」）。
       新接入的账号如果已有收藏，同步后会自动补描述。
     </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>面板视图（和微信一致：5 列，最新在左上）</h2>
+      <div class="hint" style="margin-bottom:8px;line-height:1.7">
+        每一格对应微信表情面板里同一位置的格子。点某格 = 发送时点那一格。<br>
+        微信规则：<b>先收藏的排在后面</b>，所以左上角是最新收藏，右下角是最早收藏。
+      </div>
+      <div id="stPanelGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px"></div>
+      <div id="stPanelMsg" class="hint" style="margin-top:8px"></div>
+    </div>
     <div id="stGrid" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
       <div class="hint">加载中…</div>
     </div>
@@ -875,6 +884,34 @@ async function loadStickers(){
     stItems = r.items || [];
     renderStickers();
   }catch(e){ $("stGrid").innerHTML = '<div class="err">请求失败：' + esc(e) + '</div>'; }
+}
+
+
+// 面板视图：与微信面板同构（5 列，最新在左上）
+function renderPanelView(){
+  const box = $("stPanelGrid");
+  if (!box) return;
+  if (!stItems.length){ box.innerHTML = ""; $("stPanelMsg").textContent = "还没有表情"; return; }
+  const n = stItems.length;
+  // index 是收藏顺序（0 = 最早）；面板序号 = n-1-index
+  const cells = stItems.map(s => ({s, p: n - 1 - (s.index ?? 0)})).sort((a,b) => a.p - b.p);
+  box.innerHTML = cells.map(({s,p}) => {
+    const img = s.has_thumb
+      ? `<img src="/api/stickers/thumb/${s.md5}?t=${T}" loading="lazy"
+             style="width:100%;height:100%;object-fit:contain;border-radius:6px">`
+      : `<div class="hint" style="display:flex;align-items:center;justify-content:center;height:100%">无图</div>`;
+    const rc = `第${Math.floor(p/5)+1}行第${p%5+1}列`;
+    return `<div title="${esc(s.tag||s.md5)} · ${rc}"
+      style="position:relative;aspect-ratio:1/1;background:#0d1117;border:1px solid #30363d;
+             border-radius:8px;overflow:hidden">
+      ${img}
+      <span style="position:absolute;left:4px;top:3px;font-size:10px;color:#8b949e;
+        background:rgba(13,17,23,.75);padding:0 3px;border-radius:3px">${p+1}</span>
+      <span style="position:absolute;right:4px;bottom:3px;font-size:10px;color:#8b949e;
+        background:rgba(13,17,23,.75);padding:0 3px;border-radius:3px">${rc}</span>
+    </div>`;
+  }).join("");
+  $("stPanelMsg").textContent = `共 ${n} 个 · 5 列 · 总数不超过 25 时一页显示完`;
 }
 
 function renderStickers(){

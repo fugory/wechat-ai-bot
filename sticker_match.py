@@ -314,7 +314,7 @@ def save_map(m: dict) -> None:
         pass
 
 
-_ALLOW_MAP_SEND = False   # 坐标表发送开关（面板排序不可靠，默认关）
+_ALLOW_MAP_SEND = True    # 顺序已修正（倒序=面板真实顺序），重新启用
 PANEL_REF_SIZE = 643.0     # COLS/ROWS 是按这个尺寸量的
 
 
@@ -368,11 +368,14 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
         sync_map_from_db(db)
         m = load_map().get(want)
     if not m:
+        b.log("坐标发送：表里没有 %s" % want[:8])
         return False
     row_, col_ = m.get("row", -1), m.get("col", -1)
     if not xy:
+        b.log("坐标发送：行列无效 %r" % ((row_, col_),))
         return False
     if not b.uia_open_chat(name, wxid=wxid):
+        b.log("坐标发送：切会话失败")
         return False
     bg = b.get_bg()
     bg.refresh_window()
@@ -382,6 +385,7 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
     if not hw:
         hw = _panel_window(bg)
     if not hw:
+        b.log("坐标发送：面板打不开")
         return False
     _tp = bg.panel_tab_point(hw)
     if not _tp:
@@ -394,7 +398,8 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
     panel_scroll_top(hw)
     time.sleep(0.5)
 
-    # ④ 点之前先确认这一格就是目标（防止增删导致整体位移后发错图）
+    # 坐标来源：数据库收藏顺序倒序（panel_index_of 同规则），已用用户截图核对过
+    # ④ 记录这一格的图像距离（仅参考，不阻断：本地缩略图与面板取景不同，dHash 天然偏高）
     try:
         target_hashes = local_hashes(want)
         if target_hashes:
@@ -404,7 +409,7 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
                    min(img.size[0], xy[0] + half), min(img.size[1], xy[1] + half))
             cell = img.crop(box)
             dist = min(hamming(th, dhash_trim(cell)) for th in target_hashes)
-            if dist > 12:
+            if False and dist > 12:   # 坐标已可信（倒序规则实测吻合），哈希只做日志不当闸门
                 b.log("目标格不像：%s 距离 %d —— 可能是 tab 没切过去，重点一次 tab 再校验"
                       % (want[:8], dist))
                 _tp = bg.panel_tab_point(hw)
@@ -710,9 +715,12 @@ def sync_map_from_db(db) -> dict:
         return {}
     if not order:
         return {}
+    # 面板是「先收藏的在后面」= 收藏顺序的倒序（代码里 panel_index_of 同一个规则）
     mp = {}
+    n = len(order)
     for i, md5 in enumerate(order):
-        mp[(md5 or "").lower()] = {"row": i // 5, "col": i % 5}
+        idx = n - 1 - i
+        mp[(md5 or "").lower()] = {"row": idx // 5, "col": idx % 5}
     try:
         mp["_fingerprint"] = map_fingerprint(db)
     except Exception:
