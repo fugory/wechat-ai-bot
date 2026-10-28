@@ -909,6 +909,9 @@ function renderPanelView(){
         background:rgba(13,17,23,.75);padding:0 3px;border-radius:3px">${p+1}</span>
       <span style="position:absolute;right:4px;bottom:3px;font-size:10px;color:#8b949e;
         background:rgba(13,17,23,.75);padding:0 3px;border-radius:3px">${rc}</span>
+      <button class="stSend" data-md5="${s.md5}"
+        style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+               opacity:0;transition:.15s;font-size:11px;padding:2px 8px">试发</button>
     </div>`;
   }).join("");
   $("stPanelMsg").textContent = `共 ${n} 个 · 5 列 · 总数不超过 25 时一页显示完`;
@@ -1182,6 +1185,32 @@ function maybeFirstRun(cfg){
     };
   }catch(e){}
 }
+
+// 面板视图：悬停显示「试发」
+document.addEventListener("mouseover", e => {
+  const cell = e.target.closest && e.target.closest("#stPanelGrid > div");
+  if (cell) { const b = cell.querySelector(".stSend"); if (b) b.style.opacity = 1; }
+});
+document.addEventListener("mouseout", e => {
+  const cell = e.target.closest && e.target.closest("#stPanelGrid > div");
+  if (cell && !cell.contains(e.relatedTarget)) {
+    const b = cell.querySelector(".stSend"); if (b) b.style.opacity = 0;
+  }
+});
+document.addEventListener("click", async e => {
+  const btn = e.target.closest && e.target.closest(".stSend");
+  if (!btn) return;
+  const md5 = btn.dataset.md5;
+  btn.disabled = true; btn.textContent = "发送中";
+  try{
+    const r = await api("/api/stickers/send", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({md5})});
+    btn.textContent = r.ok ? "已发出" : "失败";
+    btn.title = r.msg || r.error || "";
+    if (!r.ok) alert("试发失败：" + (r.error || r.msg || ""));
+  }catch(err){ btn.textContent = "失败"; }
+  finally{ setTimeout(() => { btn.disabled = false; btn.textContent = "试发"; }, 2500); }
+});
 // ---------------- 坐标校准 ----------------
 let cdNames = {};
 async function loadCoords(){

@@ -1551,6 +1551,39 @@ def _describe_missing(md5s: list) -> None:
         _logs.append("[gui] 补描述失败：%s" % e)
 
 
+@app.post("/api/stickers/send")
+def api_stickers_send():
+    """试发一个表情（发到文件传输助手）。必须 bot 停止，走子进程。"""
+    data = request.get_json(force=True, silent=True) or {}
+    md5 = (data.get("md5") or "").strip().lower()
+    if len(md5) < 32:
+        return jsonify({"ok": False, "error": "md5 不对"})
+    running, _pid, _up = _bot_running()
+    if running:
+        return jsonify({"ok": False,
+                        "error": "bot 正在运行，先停止再试发（两个进程同时操作微信会互相打架）"})
+    try:
+        import subprocess as sp
+        py = _py_exe()
+        if not py:
+            return jsonify({"ok": False, "error": "打包版不支持试发（需要 Python 环境）"})
+        p = sp.run([py, "send_one_sticker.py", md5], cwd=ROOT, capture_output=True,
+                   text=True, timeout=180, encoding="utf-8", errors="replace")
+        line = ""
+        for ln in (p.stdout or "").splitlines():
+            if ln.startswith("SEND_RESULT "):
+                line = ln[len("SEND_RESULT "):]
+        if not line:
+            return jsonify({"ok": False,
+                            "error": ((p.stderr or "") + (p.stdout or ""))[-300:] or "没有输出"})
+        import json as _j
+        d = _j.loads(line)
+        _logs.append("[gui] 试发表情 %s：%s" % (md5[:8], d.get("msg")))
+        return jsonify(d)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.post("/api/stickers/calibrate")
 def api_stickers_calibrate():
     """校准：跑独立子进程（GUI 进程里 UIA 不可用）。"""

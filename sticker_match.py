@@ -621,7 +621,9 @@ def send_sticker_by_md5(db, wxid: str, name: str, md5: str,
                       i, cx, cy, crop)
                      for i, cx, cy, crop in cells), key=lambda x: x[0])
     best = scored[0][0]
-    b.log("面板匹配：第 1 页共 %d 格，最佳距离 %d" % (len(cells), best))
+    second = scored[1][0] if len(scored) > 1 else 99
+    b.log("面板匹配：第 1 页共 %d 格，最佳距离 %d（第二名 %d）"
+          % (len(cells), best, second))
 
     # 第一页不够像 → 真的翻页再找（之前这里提前 return，翻页是死代码）
     pages = [scored]
@@ -644,10 +646,11 @@ def send_sticker_by_md5(db, wxid: str, name: str, md5: str,
         else:
             break
 
-    if best > 12:
+    confident = (best <= 12) or (best <= 16 and (second - best) >= 6)
+    if not confident:
         bg.close_emoji_panel()
-        b.log("面板里没有这张（翻完 %d 页，最佳距离 %d 过大），放弃发送"
-              % (len(pages), best))
+        b.log("面板里没有这张（最佳 %d / 第二 %d，不够确定），放弃发送"
+              % (best, second))
         return False
 
     # 翻过页就回到顶部，避免点错行
