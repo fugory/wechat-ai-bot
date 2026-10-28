@@ -911,7 +911,7 @@ function renderPanelView(){
         background:rgba(13,17,23,.75);padding:0 3px;border-radius:3px">${rc}</span>
       <button class="stSend" data-md5="${s.md5}"
         style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-               opacity:0;transition:.15s;font-size:11px;padding:2px 8px">试发</button>
+               opacity:.92;font-size:11px;padding:2px 8px">试发</button>
     </div>`;
   }).join("");
   $("stPanelMsg").textContent = `共 ${n} 个 · 5 列 · 总数不超过 25 时一页显示完`;
@@ -1206,9 +1206,15 @@ document.addEventListener("click", async e => {
     const r = await api("/api/stickers/send", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({md5})});
     btn.textContent = r.ok ? "已发出" : "失败";
-    btn.title = r.msg || r.error || "";
-    if (!r.ok) alert("试发失败：" + (r.error || r.msg || ""));
-  }catch(err){ btn.textContent = "失败"; }
+    const m = document.getElementById('stPanelMsg');
+    if (m) m.innerHTML = r.ok
+      ? ('<span style="color:#3fb950">✅ 已发到「文件传输助手」：' + esc(r.md5||'') + '</span>')
+      : ('<span style="color:#e5484d">❌ ' + esc(r.error || r.msg || '失败') + '</span>');
+  }catch(err){
+    btn.textContent = "失败";
+    const m = document.getElementById('stPanelMsg');
+    if (m) m.innerHTML = '<span style="color:#e5484d">❌ 请求失败：' + esc(String(err)) + '</span>';
+  }
   finally{ setTimeout(() => { btn.disabled = false; btn.textContent = "试发"; }, 2500); }
 });
 // ---------------- 坐标校准 ----------------
