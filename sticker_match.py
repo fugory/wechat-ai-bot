@@ -314,30 +314,62 @@ def save_map(m: dict) -> None:
         pass
 
 
-def cell_xy(row: int, col: int):
+_ALLOW_MAP_SEND = False   # 坐标表发送开关（面板排序不可靠，默认关）
+PANEL_REF_SIZE = 643.0     # COLS/ROWS 是按这个尺寸量的
+
+
+def cell_xy(row: int, col: int, panel: int = 0):
+    """格子中心坐标。传 panel 时按面板实际尺寸等比缩放（面板已不是 643）。"""
     try:
-        return COLS[int(col)], ROWS[int(row)]
+        cx, cy = COLS[int(col)], ROWS[int(row)]
     except Exception:
         return None
+    if panel:
+        try:
+            import ctypes
+            import ctypes.wintypes as wt
+            r = wt.RECT()
+            ctypes.windll.user32.GetClientRect(panel, ctypes.byref(r))
+            w, h = r.right - r.left, r.bottom - r.top
+            if w > 100 and h > 100:
+                return int(cx * w / PANEL_REF_SIZE), int(cy * h / PANEL_REF_SIZE)
+        except Exception:
+            pass
+    return cx, cy
 
 
 def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
-    """按缓存坐标发一个表情。返回 True=已发出且校验一致。"""
+    """按缓存坐标发一个表情 —— **当前默认禁用**。
+
+    实测面板按"最近使用"排序，与数据库收藏顺序不一致，
+    按坐标点会点到别的表情。安全问题优先，暂时关闭。
+    """
+    if not _ALLOW_MAP_SEND:
+        return False
 
     # 坐标表必须和"当前收藏集合"匹配，否则行列会错、还会点错格子
     try:
         if map_is_stale(db):
-            b.log("坐标表已过期（收藏变了）：不用缓存坐标，改走面板匹配")
-            return False
-    except Exception:
-        pass
+            # 收藏变了：坐标整体位移→按数据库顺序重算（不点击），然后继续用缓存
+            old_n = len([k for k in load_map() if not k.startswith("_")])
+            new_map = sync_map_from_db(db)
+            new_n = len([k for k in new_map if not k.startswith("_")])
+            b.log("坐标表已过期（收藏变了）：按数据库顺序重建 %d→%d 条" % (old_n, new_n))
+    except Exception as _e:
+        b.log("坐标表重建失败（转匹配）：%s" % _e)
+        return False
 
     import re
     want = (md5 or "").lower()
     m = load_map().get(want)
     if not m:
+        # 坐标表缺这条（历史遗留）：按数据库顺序补一次再试
+        b.log("坐标表缺 %s，按收藏顺序补一次" % want[:8])
+        sync_map_from_db(db)
+        m = load_map().get(want)
+    if not m:
         return False
-    xy = cell_xy(m.get("row", -1), m.get("col", -1))
+    row_, col_ = m.get("row", -1), m.get("col", -1)
     if not xy:
         return False
     if not b.uia_open_chat(name, wxid=wxid):
@@ -351,8 +383,14 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
         hw = _panel_window(bg)
     if not hw:
         return False
-    bg._click_panel_at(hw, _TAB[0], _TAB[1])
+    _tp = bg.panel_tab_point(hw)
+    if not _tp:
+        bg.close_emoji_panel()
+        b.log("发表情失败：定位不到收藏 tab（已放弃，避免发出表情）")
+        return False
+    bg._click_panel_at(hw, _tp[0], _tp[1])
     time.sleep(0.9)
+    xy = cell_xy(row_, col_, hw)     # 按面板实际尺寸算格子坐标
     panel_scroll_top(hw)
     time.sleep(0.5)
 
@@ -369,7 +407,12 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
             if dist > 12:
                 b.log("目标格不像：%s 距离 %d —— 可能是 tab 没切过去，重点一次 tab 再校验"
                       % (want[:8], dist))
-                bg._click_panel_at(hw, _TAB[0], _TAB[1])
+                _tp = bg.panel_tab_point(hw)
+                if not _tp:
+                    bg.close_emoji_panel()
+                    b.log("发表情失败：定位不到收藏 tab（已放弃，避免发出表情）")
+                    return False
+                bg._click_panel_at(hw, _tp[0], _tp[1])
                 time.sleep(1.2)
                 panel_scroll_top(hw)
                 time.sleep(0.6)
@@ -381,28 +424,7 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
                 except Exception:
                     dist = 99
                 if dist > 20:
-                    # 仍然不像：按坐标点一次，用数据库回读做最终判断
-                    b.log("仍然不像（%d）：按坐标点一次，用数据库回读判定" % dist)
-                    bg._click_panel_at(hw, xy[0], xy[1])
-                    time.sleep(1.0)
-                    try:
-                        rows2 = db.get_messages(wxid, limit=2) or []
-                        got2 = ""
-                        if rows2:
-                            mm2 = re.search(r'md5\s*=\s*"?([0-9a-fA-F]{32})',
-                                            str(rows2[0].get("content") or ""))
-                            got2 = (mm2.group(1) or "").lower() if mm2 else ""
-                        if got2 == want:
-                            b.log("按坐标发送成功（数据库确认）：%s" % want[:8])
-                            b.PANEL_OPEN = True
-                            return True
-                        b.log("按坐标发送对不上：期望 %s 实发 %s"
-                              % (want[:8], (got2[:8] or "非表情")))
-                    except Exception as e:
-                        b.log("回读失败：%s" % e)
-                    mm = load_map()
-                    mm.pop(want, None)
-                    save_map(mm)
+                    b.log("目标格始终不像（%d）：放弃，避免发错表情" % dist)
                     try:
                         bg.close_emoji_panel()
                     except Exception:
@@ -434,7 +456,7 @@ def send_by_map(db, wxid: str, name: str, md5: str) -> bool:
             pass
         b.log("缓存坐标失效：期望 %s 实发 %s" % (want[:8], got[:8] or "非表情"))
         mm2 = load_map()
-        mm2.pop(want, None)
+        # mm2.pop(want, None)   # 不要删：删了这条就永远没坐标了
         save_map(mm2)
         return False
     except Exception as e:
@@ -473,7 +495,12 @@ def calibrate_stickers(db, threshold: int = 12):
         if not hw:
             b.log("校准：面板打不开")
             return matched, unmatched
-        bg._click_panel_at(hw, _TAB[0], _TAB[1])
+        _tp = bg.panel_tab_point(hw)
+        if not _tp:
+            bg.close_emoji_panel()
+            b.log("校准：定位不到收藏 tab，本轮跳过")
+            return matched, unmatched
+        bg._click_panel_at(hw, _tp[0], _tp[1])
         time.sleep(0.9)
 
         # 收集"所有页"的格子，覆盖面更广
@@ -569,7 +596,12 @@ def send_sticker_by_md5(db, wxid: str, name: str, md5: str,
 
     # 必须先切到「收藏贴纸」tab，再截图：否则截到的是 emoji 面板
     try:
-        bg._click_panel_at(hw, _TAB[0], _TAB[1])
+        _tp = bg.panel_tab_point(hw)
+        if not _tp:
+            bg.close_emoji_panel()
+            b.log("发表情失败：定位不到收藏 tab（已放弃，避免发出表情）")
+            return False
+        bg._click_panel_at(hw, _tp[0], _tp[1])
         time.sleep(0.8)
     except Exception as e:
         b.log('切收藏tab失败：%s' % e)
@@ -669,6 +701,26 @@ if __name__ == "__main__":
         print("%-16s %s" % ((it.get("tag") or "")[:14], "OK" if r else "FAIL"))
         ok += r
     print("成功 %d/3" % ok)
+
+def sync_map_from_db(db) -> dict:
+    """按数据库收藏顺序重算坐标表（不点格子），并写入指纹。"""
+    try:
+        order = b.sticker_order_md5s(db)
+    except Exception:
+        return {}
+    if not order:
+        return {}
+    mp = {}
+    for i, md5 in enumerate(order):
+        mp[(md5 or "").lower()] = {"row": i // 5, "col": i % 5}
+    try:
+        mp["_fingerprint"] = map_fingerprint(db)
+    except Exception:
+        pass
+    save_map(mp)
+    b.log("坐标表已按收藏顺序重建：%d 条" % len(order))
+    return mp
+
 
 def map_fingerprint(db) -> str:
     """收藏集合的指纹（md5 排序后拼接再取 md5），用来判断坐标表是否过期。"""

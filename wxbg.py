@@ -91,7 +91,10 @@ EMOJI_ROWS_Y = [158, 297, 407]               # 主窗口里的近似位置（已
 # 表情面板是**独立弹窗窗口**（Qt…ToolSaveBits, 643x643），点击必须发到它自己
 PANEL_COLS_X = [101, 212, 320, 430, 540]
 PANEL_ROWS_Y = [100, 208, 311, 417]   # 收藏超过 15 个时会有第 4 行
-PANEL_TAB_STICKER = (201, 575)   # 面板底部心形 tab（收藏贴纸）
+PANEL_TAB_STICKER = (201, 575)   # 旧值：643×643 面板下的近似像素（已废弃，保留兼容）
+# 心形 tab 在面板内的相对位置（2026-10-28 用户截图实测）
+PANEL_TAB_STICKER_FRAC = (0.310, 0.914)
+PANEL_TOOLBAR_BAND = 0.86        # y 必须大于面板高度的这个比例，否则不许点
 STICKER_BUBBLE_X_LEFT = 446      # 收到的表情气泡中心 x
 STICKER_BUBBLE_X_RIGHT = 924     # 自己发的气泡中心 x
 STICKER_BUBBLE_Y_FROM_BOTTOM = 272   # 气泡中心距客户区底部
@@ -687,6 +690,24 @@ class BgWeChat:
         ok = self.click_menu_item_safe()
         time.sleep(2.0)
         return ok
+
+    def panel_tab_point(self, panel: int):
+        """算出「收藏贴纸」tab 在面板客户区里的坐标；不在底部条带就返回 None。"""
+        import ctypes
+        import ctypes.wintypes as wt
+        r = wt.RECT()
+        ctypes.windll.user32.GetClientRect(panel, ctypes.byref(r))
+        w, h = r.right - r.left, r.bottom - r.top
+        if w < 200 or h < 200:
+            self._log("面板尺寸异常：%dx%d" % (w, h))
+            return None
+        fx, fy = PANEL_TAB_STICKER_FRAC
+        x, y = int(w * fx), int(h * fy)
+        if y < h * PANEL_TOOLBAR_BAND:
+            self._log("拒绝点 tab：算出来 y=%d 不在底部条带（h=%d）" % (y, h))
+            return None
+        self._log("收藏 tab 坐标：(%d,%d) / 面板 %dx%d" % (x, y, w, h))
+        return x, y
 
     def _click_panel_at(self, panel: int, x: int, y: int) -> None:
         """往表情面板那个独立窗口投递一次左键点击（坐标是面板客户区）。"""
